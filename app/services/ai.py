@@ -20,22 +20,22 @@ logger = logging.getLogger(__name__)
 # ----------------------------- 配置定义 ----------------------------------
 
 BAILIAN_CONFIG = {
-    "api_key": "sk-4b2f077657014a40bb4da3840cd9ad98",
-    "app_id": "ac3f206c1bbe4be9a35415833d66eb48",
+    "api_key": "Please use your own information",
+    "app_id": "Please use your own information",
     "base_url": "https://dashscope.aliyuncs.com/api/v1/",
     "model": "qwen-max-0919",
 }
 
 TENCENT_CONFIG = {
     "base_url": "https://wss.lke.cloud.tencent.com/v1/qbot/chat/sse",
-    "app_key": "dUZpKLBSnjnYtARaVpLRlaztTOWagXxpHWbNKASQQYvVpzYXVRaGBJCaKskEVFznnFZHWlVxulYzxJXRzsmLdkllZnqnDnOBJzGXbdRnRXxOcBheZSjQkVjkxKRDtOdt",
+    "app_key": "Please use your own information",
     "timeout": 30,
     "model": "tencent-lke",
 }
 
 BAIDU_CONFIG = {
-    "api_key": "bce-v3/ALTAK-Oqbx76WHv6CS6yAz6HwUj/ee1e5dbcbf72271ea018038a042e0ff27c843919",
-    "app_id": "b5914616-89d3-43bb-a427-430d7d5d1605",
+    "api_key": "Please use your own information",
+    "app_id": "Please use your own information",
     "model": "baidu-appbuilder",
     "timeout": 30,
 }
