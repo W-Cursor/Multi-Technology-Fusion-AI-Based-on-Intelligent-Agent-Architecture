@@ -50,4 +50,15 @@ Multi-Technology Fusion AI Based on Intelligent Agent Architecture
 - 引入自动特征选择与队列训练调度模块，允许批量试验不同模型配置；
 - 将趋势/相关性分析结果回馈 TableGPT，让智能问答自动聚焦当前指标并给出更具操作性的建议；
 - 结合真实铝厂生产数据与知识图谱扩展（例如加入化学反应阶段建模与设备运行日志），打造工业级智能决策平台。
-<img width="566" height="278" alt="image" src="https://github.com/user-attachments/assets/04abd58d-5cd0-4a8e-b7be-1cc783e2e903" />
+<img width="3692" height="1837" alt="屏幕截图 2025-12-24 164257" src="https://github.com/user-attachments/assets/79dc575e-710c-4aaf-9092-7640bf48da22" />
+<img width="3598" height="1635" alt="屏幕截图 2025-12-24 165526" src="https://github.com/user-attachments/assets/782caf19-a1b2-4bee-8f8c-cc6e9410ffc4" />
+<img width="3749" height="1865" alt="屏幕截图 2025-12-24 165506" src="https://github.com/user-attachments/assets/6944d2a5-8fce-45dd-aa25-18d5adcc7894" />
+<img width="3696" height="1874" alt="屏幕截图 2025-12-24 164312" src="https://github.com/user-attachments/assets/6f18b25b-ceda-42bb-a5ac-7bbe9ad596e4" />
+
+<img width="2009" height="1869" alt="屏幕截图 2025-12-24 164541" src="https://github.com/user-attachments/assets/d2feb12e-4e19-4675-ad7f-1716223300ee" />
+
+<img width="3720" height="1828" alt="屏幕截图 2025-12-24 164838" src="https://github.com/user-attachments/assets/5a009135-2a67-4108-82d0-a6b9384991fe" />
+
+<img width="3703" height="1902" alt="屏幕截图 2025-12-24 165337" src="https://github.com/user-attachments/assets/54690fbd-3934-4885-a3b1-f8503abefda3" />
+
+
