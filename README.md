@@ -50,3 +50,4 @@ Multi-Technology Fusion AI Based on Intelligent Agent Architecture
 - 引入自动特征选择与队列训练调度模块，允许批量试验不同模型配置；
 - 将趋势/相关性分析结果回馈 TableGPT，让智能问答自动聚焦当前指标并给出更具操作性的建议；
 - 结合真实铝厂生产数据与知识图谱扩展（例如加入化学反应阶段建模与设备运行日志），打造工业级智能决策平台。
+<img width="566" height="278" alt="image" src="https://github.com/user-attachments/assets/04abd58d-5cd0-4a8e-b7be-1cc783e2e903" />
