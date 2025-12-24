@@ -1,0 +1,2122 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>拜耳法生产氧化铝监控分析系统</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="dashboard">
+    <div class="background-grid"></div>
+    <header class="dashboard-header">
+        <div class="title-block">
+            <h1>拜耳法生产氧化铝监控分析系统</h1>
+            <p>拜耳法生产数据离线监测与预测平台</p>
+        </div>
+        <div class="header-controls">
+            <div class="status-bar" id="provider-status-bar">
+                <span class="status-item" data-provider="tablegpt">TableGPT</span>
+                <span class="status-item" data-provider="ollama">Ollama</span>
+                <span class="status-item" data-provider="bailian">百炼</span>
+            </div>
+            <form id="preview-form" class="control-form">
+                <label for="file" class="control-label">上传历史数据 (CSV / Excel)</label>
+                <div class="control-inputs">
+                    <input type="file" id="file" name="file" accept=".csv,.xls,.xlsx" required>
+                    <button type="submit">预览数据</button>
+                </div>
+            </form>
+            <div class="toolbar-actions">
+                <button type="button" id="open-balance" class="balance-button">平衡计算</button>
+                <button type="button" id="open-ai-chat" class="ai-entry-button">AI 问答</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="dashboard-main">
+        <aside class="sidebar">
+            <section class="panel-block">
+                <h2>预警信息</h2>
+                <div id="warning-messages" class="warning-list">暂无预警</div>
+            </section>
+            <section class="panel-block">
+                <h2>数据概览</h2>
+                <div id="preview-info" class="preview-info">请上传数据以预览字段。</div>
+            </section>
+            <section class="panel-block">
+                <h2>表格信息对话</h2>
+                <div class="table-chat-preview">
+                    <p id="table-chat-status">请先上传数据并完成预览。</p>
+                    <button type="button" id="open-table-chat" class="ghost" disabled>打开对话</button>
+                </div>
+            </section>
+        </aside>
+
+        <section class="main-content">
+            <div class="panel-grid">
+                <div class="panel-block selection-panel">
+                    <h2>指标选择</h2>
+                    <form id="analysis-form" class="hidden selection-form">
+                        <div class="selection-top">
+                            <div class="field-select keyword">
+                                <label for="column-search">关键词</label>
+                                <input type="text" id="column-search" placeholder="输入关键词过滤字段...">
+                            </div>
+                            <div class="field-select timestamp">
+                                <label for="timestamp">时间字段</label>
+                                <select id="timestamp" name="timestamp"></select>
+                            </div>
+                        </div>
+                        <div class="selection-list" id="columns-container">
+                            <select id="columns" name="columns" multiple size="12"></select>
+                        </div>
+                        <div class="selection-actions">
+                            <div class="hint">可多选，默认勾选系统推荐字段。</div>
+                            <div class="buttons">
+                                <button type="button" id="select-all" class="ghost">全选</button>
+                                <button type="button" id="clear-all" class="ghost">清除</button>
+                                <button type="submit" class="primary">开始分析</button>
+                                <button type="button" id="open-report" class="ghost" disabled>生成报表</button>
+                                <button type="button" id="export-excel" class="ghost" disabled>导出Excel</button>
+                                <button type="button" id="open-parameter-analysis" class="ghost" disabled>参数影响分析</button>
+                                <button type="button" id="open-model-lab" class="ghost" disabled>预测模型实验</button>
+                                <button type="button" id="open-kg-graph" class="ghost" disabled>知识图谱实验</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="panel-block">
+                    <h2>趋势分析</h2>
+                    <div id="forecast-chart" class="forecast-chart">
+                        <p class="empty-state">等待分析结果...</p>
+                    </div>
+                    <div id="forecast-legend" class="chart-legend"></div>
+                </div>
+
+                <div class="panel-block">
+                    <h2>指标诊断详情</h2>
+                    <div id="analysis-report" class="detail-grid">
+                        <p class="empty-state">等待分析结果...</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <aside class="sidebar">
+            <section class="panel-block">
+                <h2>统计分析</h2>
+                <div id="stat-chart" class="chart-placeholder">等待分析结果...</div>
+            </section>
+            <section class="panel-block">
+                <h2>风险趋势摘要</h2>
+                <div id="risk-trend" class="chart-placeholder">--</div>
+            </section>
+            <section class="panel-block">
+                <h2>风险源态势</h2>
+                <div id="risk-source" class="chart-placeholder">--</div>
+            </section>
+        </aside>
+    </main>
+
+    <div id="ai-modal" class="ai-modal hidden">
+        <div class="ai-modal-content">
+            <header>
+                <h2>AI 问答助手</h2>
+                <button type="button" id="close-ai-modal" class="close-btn">×</button>
+            </header>
+            <main>
+                <div class="ai-panel">
+                    <form id="ai-form">
+                        <div class="ai-controls">
+                            <select id="ai-provider">
+                                <option value="bailian">百炼智能体</option>
+                                <option value="baidu">百度AI</option>
+                            </select>
+                        </div>
+                        <textarea id="ai-question" placeholder="请输入要咨询的问题，例如：当前指标异常可能的原因是什么？" required></textarea>
+                        <label class="skip-validation">
+                            <input type="checkbox" id="ai-skip-validation">
+                            跳过工序检测（仅在确认无匹配字段时使用）
+                        </label>
+                        <div class="ai-modal-actions">
+                            <button type="button" id="ai-send">发送</button>
+                        </div>
+                    </form>
+                    <div id="ai-response" class="ai-response empty-state">欢迎提问，我可以提供拜耳法生产相关分析建议。</div>
+                    <div id="ai-quota-info" class="ai-quota-info"></div>
+                </div>
+            </main>
+        </div>
+        <div class="ai-modal-backdrop"></div>
+    </div>
+
+    <div id="balance-modal" class="balance-modal hidden">
+        <div class="balance-modal-content">
+            <header>
+                <h2>拜耳法生产平衡计算</h2>
+                <button type="button" id="close-balance-modal" class="close-btn">×</button>
+            </header>
+            <main>
+                <div class="balance-content">
+                    <section class="balance-input-panel">
+                        <h3>输入参数</h3>
+                        <div class="balance-status" id="balance-status">默认使用预设参数，可自行调整。</div>
+                        <div class="balance-table-wrapper">
+                            <table class="balance-input-table">
+                                <thead>
+                                    <tr>
+                                        <th>材料</th>
+                                        <th>Al₂O₃ %</th>
+                                        <th>SiO₂ %</th>
+                                        <th>Fe₂O₃ %</th>
+                                        <th>TiO₂ %</th>
+                                        <th>CaO %</th>
+                                        <th>H₂O %</th>
+                                        <th>CO₂ %</th>
+                                        <th>Na₂O %</th>
+                                        <th>其他 %</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>铝土矿</td>
+                                        <td><input type="number" step="0.01" data-mineral="bauxite" data-index="0" value="50"></td>
+                                        <td><input type="number" step="0.01" data-mineral="bauxite" data-index="1" value="8"></td>
+                                        <td><input type="number" step="0.01" data-mineral="bauxite" data-index="2" value="20"></td>
+                                        <td><input type="number" step="0.01" data-mineral="bauxite" data-index="3" value="3.76"></td>
+                                        <td><input type="number" step="0.01" data-mineral="bauxite" data-index="4" value="0"></td>
+                                        <td><input type="number" step="0.01" data-mineral="bauxite" data-index="5" value="5"></td>
+                                        <td><input type="number" step="0.01" data-mineral="bauxite" data-index="6" value="0"></td>
+                                        <td><input type="number" step="0.01" data-mineral="bauxite" data-index="7" value="0"></td>
+                                        <td><input type="number" step="0.01" data-mineral="bauxite" data-index="8" value="13.24"></td>
+                                    </tr>
+                                    <tr>
+                                        <td>石灰</td>
+                                        <td><input type="number" step="0.01" data-mineral="lime" data-index="0" value="0"></td>
+                                        <td><input type="number" step="0.01" data-mineral="lime" data-index="1" value="0"></td>
+                                        <td><input type="number" step="0.01" data-mineral="lime" data-index="2" value="0"></td>
+                                        <td><input type="number" step="0.01" data-mineral="lime" data-index="3" value="0"></td>
+                                        <td><input type="number" step="0.01" data-mineral="lime" data-index="4" value="85"></td>
+                                        <td><input type="number" step="0.01" data-mineral="lime" data-index="5" value="0"></td>
+                                        <td><input type="number" step="0.01" data-mineral="lime" data-index="6" value="0"></td>
+                                        <td><input type="number" step="0.01" data-mineral="lime" data-index="7" value="0"></td>
+                                        <td><input type="number" step="0.01" data-mineral="lime" data-index="8" value="15"></td>
+                                    </tr>
+                                    <tr>
+                                        <td>成品氧化铝</td>
+                                        <td><input type="number" step="0.01" data-mineral="alumina" data-index="0" value="99"></td>
+                                        <td><input type="number" step="0.01" data-mineral="alumina" data-index="1" value="0"></td>
+                                        <td><input type="number" step="0.01" data-mineral="alumina" data-index="2" value="0"></td>
+                                        <td><input type="number" step="0.01" data-mineral="alumina" data-index="3" value="0"></td>
+                                        <td><input type="number" step="0.01" data-mineral="alumina" data-index="4" value="0"></td>
+                                        <td><input type="number" step="0.01" data-mineral="alumina" data-index="5" value="0"></td>
+                                        <td><input type="number" step="0.01" data-mineral="alumina" data-index="6" value="0"></td>
+                                        <td><input type="number" step="0.01" data-mineral="alumina" data-index="7" value="1"></td>
+                                        <td><input type="number" step="0.01" data-mineral="alumina" data-index="8" value="0"></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <h3>工艺参数</h3>
+                        <div class="balance-param-grid" id="balance-param-grid"></div>
+
+                        <div class="balance-actions">
+                            <button type="button" id="reset-balance" class="ghost">恢复默认</button>
+                            <button type="button" id="submit-balance" class="primary">🧮 开始计算</button>
+                        </div>
+                    </section>
+                    <section class="balance-result-panel">
+                        <h3>计算结果</h3>
+                        <div id="balance-result" class="balance-result">
+                            <p class="loading-text">请点击"开始计算"以生成平衡结果。</p>
+                        </div>
+                    </section>
+                </div>
+            </main>
+        </div>
+        <div class="balance-modal-backdrop"></div>
+    </div>
+
+    <div id="table-chat-modal" class="table-chat-modal hidden">
+        <div class="table-chat-content">
+            <header>
+                <h2>表格信息对话</h2>
+                <button type="button" id="close-table-chat" class="close-btn">×</button>
+            </header>
+            <main>
+                <div class="table-chat-panel">
+                    <div class="table-chat-controls">
+                        <select id="table-chat-provider" data-tablegpt-base="{{ settings.tablegpt_base_url or '' }}">
+                            <option value="bailian">百炼模型</option>
+                            <option value="tablegpt">TableGPT（本地）</option>
+                            <option value="ollama">Ollama（本地）</option>
+                        </select>
+                    </div>
+                    <textarea id="table-chat-question" placeholder="请输入需要分析的问题，例如：最近三天的关键指标趋势如何？" required></textarea>
+                    <div class="table-chat-actions">
+                        <label class="skip-validation">
+                            <input type="checkbox" id="table-chat-skip-validation">
+                            跳过工序检测（仅在确认无匹配字段时使用）
+                        </label>
+                        <button type="button" id="table-chat-send">分析</button>
+                    </div>
+                    <div id="table-chat-response" class="table-chat-response empty-state">准备就绪，请输入问题后点击"分析"。</div>
+                    <div id="table-chat-quota" class="table-chat-quota-info"></div>
+                </div>
+            </main>
+        </div>
+        <div class="table-chat-backdrop"></div>
+    </div>
+
+    <div id="report-modal" class="report-modal hidden">
+        <div class="report-modal-content">
+            <header>
+                <h2>指标分析报表</h2>
+                <div class="report-header-actions">
+                    <button type="button" id="report-export" class="ghost" disabled>导出</button>
+                    <button type="button" id="close-report-modal" class="close-btn">×</button>
+                </div>
+            </header>
+            <main>
+                <div class="report-meta">
+                    <p><strong>选择字段：</strong><span id="report-columns">--</span></p>
+                    <p><strong>时间字段：</strong><span id="report-timestamp">--</span></p>
+                </div>
+                <textarea id="report-editor"></textarea>
+                <div id="report-message" class="report-message empty-state">请生成报表后查看。</div>
+            </main>
+        </div>
+        <div class="report-modal-backdrop"></div>
+    </div>
+
+    <script>
+        const previewForm = document.getElementById('preview-form');
+        const analysisForm = document.getElementById('analysis-form');
+        const warningList = document.getElementById('warning-messages');
+        const previewDiv = document.getElementById('preview-info');
+        const statChartDiv = document.getElementById('stat-chart');
+        const riskTrendDiv = document.getElementById('risk-trend');
+        const riskSourceDiv = document.getElementById('risk-source');
+        const resultDiv = document.getElementById('analysis-report');
+        const forecastChartDiv = document.getElementById('forecast-chart');
+        const forecastLegend = document.getElementById('forecast-legend');
+        const columnsSelect = document.getElementById('columns');
+        const columnSearch = document.getElementById('column-search');
+        const timestampSelect = document.getElementById('timestamp');
+        const selectAllBtn = document.getElementById('select-all');
+        const clearAllBtn = document.getElementById('clear-all');
+        const openReportBtn = document.getElementById('open-report');
+        const exportExcelBtn = document.getElementById('export-excel');
+        const openParameterAnalysisBtn = document.getElementById('open-parameter-analysis');
+        const openModelLabBtn = document.getElementById('open-model-lab');
+        const openKgGraphBtn = document.getElementById('open-kg-graph');
+        const aiQuestionInput = document.getElementById('ai-question');
+        const aiProviderSelect = document.getElementById('ai-provider');
+        const aiResponseDiv = document.getElementById('ai-response');
+        const aiSendBtn = document.getElementById('ai-send');
+        const aiModal = document.getElementById('ai-modal');
+        const openAiBtn = document.getElementById('open-ai-chat');
+        const closeAiBtn = document.getElementById('close-ai-modal');
+        const aiQuotaInfo = document.getElementById('ai-quota-info');
+        const openTableChatBtn = document.getElementById('open-table-chat');
+        const tableChatStatus = document.getElementById('table-chat-status');
+        const tableChatModal = document.getElementById('table-chat-modal');
+        const closeTableChatBtn = document.getElementById('close-table-chat');
+        const tableChatQuestion = document.getElementById('table-chat-question');
+        const tableChatSendBtn = document.getElementById('table-chat-send');
+        const tableChatResponse = document.getElementById('table-chat-response');
+        const tableChatQuotaInfo = document.getElementById('table-chat-quota');
+        const tableChatProviderSelect = document.getElementById('table-chat-provider');
+        const aiSkipValidation = document.getElementById('ai-skip-validation');
+        const tableChatSkipValidation = document.getElementById('table-chat-skip-validation');
+        async function initTablegptBase() {
+            const fallback = tableChatProviderSelect.getAttribute('data-tablegpt-base') || '';
+            try {
+                const resp = await fetch('/config/tablegpt');
+                const data = await resp.json();
+                const baseUrl = data?.base_url || fallback;
+                tableChatProviderSelect.dataset.tablegptBase = baseUrl;
+                tableChatProviderSelect.setAttribute('data-tablegpt-base', baseUrl);
+                if (baseUrl) {
+                    localStorage.setItem('tablegpt_base_url', baseUrl);
+                    sessionStorage.setItem('tablegpt_base_url', baseUrl);
+                }
+            } catch (err) {
+                console.warn('获取 TableGPT 配置失败:', err);
+                tableChatProviderSelect.dataset.tablegptBase = fallback;
+            }
+        }
+        initTablegptBase();
+        const palette = ['#4fc3f7', '#64ffda', '#ff8a80', '#ffd54f', '#ba68c8', '#4dd0e1'];
+        const balanceModal = document.getElementById('balance-modal');
+        const openBalanceBtn = document.getElementById('open-balance');
+        const closeBalanceBtn = document.getElementById('close-balance-modal');
+        const balanceResultDiv = document.getElementById('balance-result');
+        const balanceParamGrid = document.getElementById('balance-param-grid');
+        const submitBalanceBtn = document.getElementById('submit-balance');
+        const resetBalanceBtn = document.getElementById('reset-balance');
+        const balanceStatusDiv = document.getElementById('balance-status');
+
+        const reportModal = document.getElementById('report-modal');
+        const reportEditor = document.getElementById('report-editor');
+        const reportColumnsSpan = document.getElementById('report-columns');
+        const reportTimestampSpan = document.getElementById('report-timestamp');
+        const reportMessage = document.getElementById('report-message');
+        const closeReportBtn = document.getElementById('close-report-modal');
+        const reportExportBtn = document.getElementById('report-export');
+        const tableChatFocusSelect = document.getElementById('table-chat-focus');
+
+        let cachedFile = null;
+        let numericColumnsCache = [];
+        let suggestedColumns = [];
+        let selectedColumns = [];
+        let tableCacheKey = '';
+        let allColumnsCache = [];
+
+        const PROCESS_KEYWORDS = [
+            { name: '溶出', aliases: ['溶出', '溶解', 'dissolution'] },
+            { name: '沉降', aliases: ['沉降', '沉淀', 'sett降', 'settling'] },
+            { name: '煅烧', aliases: ['煅烧', '焙烧', 'calcine', 'calcining'] },
+            { name: '焙烧', aliases: ['焙烧', 'roast'] },
+            { name: '过滤', aliases: ['过滤', 'filter'] },
+            { name: '分解', aliases: ['分解', 'decomposition', '精液', '平盘', '立盘', '分级机'] },
+            { name: '蒸发', aliases: ['蒸发', 'evaporation', '蒸发器', '碱', '排盐', '闪蒸', '强制效'] },
+            { name: '苛化', aliases: ['苛化', 'caustic', 'causticization'] },
+            { name: '洗涤', aliases: ['洗涤', '洗液', 'washing', '一洗', '二洗', '三洗', '四洗', '赤泥'] },
+            { name: '原矿浆', aliases: ['原矿浆', '原料制备', '料浆', 'slurry', 'preparation'] },
+            { name: '预脱硅', aliases: ['预脱硅', '脱硅', 'desilication'] },
+            { name: '稀释', aliases: ['稀释', 'dilution'] },
+            { name: '分离', aliases: ['分离', 'separation', '分离机'] },
+            { name: '循环母液', aliases: ['循环母液', '母液', '循母', 'mother liquor'] },
+        ];
+
+        function resolveProcessContext(question) {
+            const trimmed = (question || '').trim();
+            if (!trimmed) {
+                return { success: false, reason: 'empty' };
+            }
+            const lowerQuestion = trimmed.toLowerCase();
+            let matchedProcess = null;
+            for (const item of PROCESS_KEYWORDS) {
+                if (item.aliases.some((alias) => lowerQuestion.includes(alias.toLowerCase()))) {
+                    matchedProcess = item;
+                    break;
+                }
+            }
+            if (!matchedProcess) {
+                return { success: false, reason: 'missing_keyword' };
+            }
+            const keywordMatches = matchedProcess.aliases.filter((alias) => lowerQuestion.includes(alias.toLowerCase()));
+            const columns = (allColumnsCache || []).filter((col) => {
+                const lowerCol = col.toLowerCase();
+                return matchedProcess.aliases.some((alias) => lowerCol.includes(alias.toLowerCase()));
+            });
+            if (!columns.length) {
+                return { success: false, reason: 'no_columns', process: matchedProcess.name, matches: keywordMatches };
+            }
+            const contextColumns = columns.slice(0, 8);
+            const enrichedQuestion = `【工序：${matchedProcess.name}】${keywordMatches.length ? `【识别到关键词：${keywordMatches.join('，')}】` : ''}【相关字段：${contextColumns.join('，')}】${trimmed}`;
+            return {
+                success: true,
+                process: matchedProcess.name,
+                columns,
+                matches: keywordMatches,
+                enrichedQuestion,
+            };
+        }
+
+        const reportState = {
+            content: '',
+            draft: '',
+            columns: [],
+            timestampColumn: '',
+            generatedAt: '',
+        };
+
+        function resetReportState() {
+            reportState.content = '';
+            reportState.draft = '';
+            reportState.columns = [];
+            reportState.timestampColumn = '';
+            reportState.generatedAt = '';
+        }
+
+        openReportBtn.disabled = true;
+        resetReportState();
+
+        let processParamMeta = [];
+        let currentModelId = '';
+        let currentModelType = 'lstm';
+
+        const defaultProcessParams = {
+            B6: 180,
+            B7: 15,
+            B8: 2.835,
+            B9: 1.27,
+            B10: 340,
+            B11: 1.2,
+            B12: 2.265,
+            B13: 1,
+            B14: 0.63,
+            B15: 3,
+            B16: 145,
+            B17: 1.325,
+            B18: 1.317,
+            B19: 1.355,
+            B20: 333,
+            B21: 420,
+            D6: 550,
+            D7: 15,
+            D8: 1,
+            D9: 5,
+            D10: 4,
+            D11: 1,
+            D12: 15,
+            D13: 612,
+            D14: 3.5,
+            D15: 1,
+            D16: 1.2,
+            D17: 320,
+            D18: 80,
+            F6: 51.3,
+            F7: 146,
+            F8: 19.4,
+            F9: 1.268,
+            F10: 1.5,
+            F11: 1,
+            F12: 0.85,
+            F13: 1.1,
+            F14: 0.9,
+            F15: 165,
+            F16: 4.7,
+            F17: 10,
+            F18: 80,
+        };
+
+        const defaultProcessParamMeta = {
+            B6: { label: '循环母液Nk g/l', unit: 'g/L', step: 0.1 },
+            B7: { label: '循环母液Nc g/l', unit: 'g/L', step: 0.1 },
+            B8: { label: '循母 αk', unit: '', step: 0.001 },
+            B9: { label: '循母ρ g/cm³', unit: 'g/cm³', step: 0.001 },
+            B10: { label: '补充碱液NK g/l', unit: 'g/L', step: 0.1 },
+            B11: { label: '补碱ρ g/cm³', unit: 'g/cm³', step: 0.001 },
+            B12: { label: '石灰添加量％', unit: '%', step: 0.01 },
+            B13: { label: '赤泥铝硅比', unit: '', step: 0.01 },
+            B14: { label: '赤泥钠硅比', unit: '', step: 0.01 },
+            B15: { label: '赤泥灼减（结晶水）%', unit: '%', step: 0.01 },
+            B16: { label: '溶出稀释Nk g/l', unit: 'g/L', step: 0.1 },
+            B17: { label: '溶出稀释αk', unit: '', step: 0.001 },
+            B18: { label: '溶出αk', unit: '', step: 0.001 },
+            B19: { label: '溶出稀释ρ g/cm³', unit: 'g/cm³', step: 0.001 },
+            B20: { label: '赤泥分离沉降槽底流液固含', unit: 'g/L', step: 0.1 },
+            B21: { label: '赤泥末次洗涤沉降槽底流固含', unit: 'g/L', step: 0.1 },
+            D6: { label: '溶出矿浆自然蒸发水 kg', unit: 'kg', step: 1 },
+            D7: { label: '物料滴漏赤泥附液Na₂O损失 kg', unit: 'kg', step: 0.1 },
+            D8: { label: '溶出水解铝%', unit: '%', step: 0.01 },
+            D9: { label: '吨干赤泥的赤泥附液Na₂OT损失 Kg', unit: 'kg', step: 0.1 },
+            D10: { label: '种分浓缩率（氢氧化铝水解带走水）%', unit: '%', step: 0.1 },
+            D11: { label: '吨Al₂O₃ 种分吸收CO₂ Kg', unit: 'kg', step: 0.1 },
+            D12: { label: 'A1(OH)₃ 分离滤饼含水率%', unit: '%', step: 0.1 },
+            D13: { label: '吨Al₂O₃的Al(OH)₃新洗水量 kg', unit: 'kg', step: 1 },
+            D14: { label: 'A1(OH)₃ 洗涤滤饼含水率%', unit: '%', step: 0.1 },
+            D15: { label: '一水碳酸钠苛化Na₂O损失量 Kg', unit: 'kg', step: 0.1 },
+            D16: { label: '苛化石灰乳过量系数', unit: '', step: 0.01 },
+            D17: { label: '苛化碱液Nk g/l', unit: 'g/L', step: 0.1 },
+            D18: { label: '苛化率%', unit: '%', step: 0.1 },
+            F6: { label: '分解率%', unit: '%', step: 0.1 },
+            F7: { label: '种分母液NK g/l', unit: 'g/L', step: 0.1 },
+            F8: { label: '种分母液NC g/l', unit: 'g/L', step: 0.1 },
+            F9: { label: '种分母液密度ρ g/cm³', unit: 'g/cm³', step: 0.001 },
+            F10: { label: 'Al₂O₃机械损失%(湿法)', unit: '%', step: 0.01 },
+            F11: { label: 'Al₂O₃机械损失%（火法）', unit: '%', step: 0.01 },
+            F12: { label: 'CO₂的转化系数', unit: '', step: 0.01 },
+            F13: { label: '石灰乳密度g/cm³', unit: 'g/cm³', step: 0.001 },
+            F14: { label: '石灰乳有效钙', unit: '', step: 0.01 },
+            F15: { label: '石灰乳CaO含量 g/l', unit: 'g/L', step: 0.1 },
+            F16: { label: '叶滤石灰乳添加比例 %', unit: '%', step: 0.01 },
+            F17: { label: '石灰乳渣比', unit: '', step: 0.1 },
+            F18: { label: '吨矿附着水', unit: 'kg', step: 0.1 },
+        };
+
+        function resolveProcessStep(key) {
+            const fineStepKeys = new Set(['B8', 'B9', 'B11', 'B12', 'B14', 'B15', 'B17', 'B18', 'D8', 'D9', 'D10', 'D12', 'D14', 'F6', 'F7', 'F8', 'F9', 'F15']);
+            return fineStepKeys.has(key) ? 0.01 : 0.1;
+        }
+
+        const balanceState = {
+            mineralData: null,
+            processParams: null,
+            resultHTML: '<p class="loading-text">请点击"开始计算"以生成平衡结果。</p>',
+            statusText: '默认使用预设参数，可自行调整。',
+        };
+
+        function ensureBalanceStateInitialized() {
+            if (!balanceState.mineralData) {
+                balanceState.mineralData = getDefaultMineralData();
+            }
+            if (!balanceState.processParams) {
+                balanceState.processParams = { ...defaultProcessParams };
+            }
+            if (!processParamMeta.length) {
+                processParamMeta = Object.entries(defaultProcessParamMeta).map(([key, meta]) => ({
+                    key,
+                    label: meta.label,
+                    unit: meta.unit,
+                    step: meta.step,
+                    default_value: defaultProcessParams[key],
+                }));
+            }
+        }
+
+        previewForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const fileInput = document.getElementById('file');
+            const file = fileInput.files[0];
+            if (!file) {
+                return;
+            }
+            cachedFile = file;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            previewDiv.innerHTML = '<p class="loading-text">正在加载字段...</p>';
+            warningList.innerHTML = '<p class="loading-text">等待分析...</p>';
+
+            const response = await fetch('/preview', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                previewDiv.innerHTML = `<p class="error">预览失败: ${error.detail}</p>`;
+                analysisForm.classList.add('hidden');
+                return;
+            }
+
+        const data = await response.json();
+        numericColumnsCache = data.numeric_columns || [];
+        resetReportState();
+        openReportBtn.disabled = true;
+        suggestedColumns = data.suggested_key_parameters || [];
+        tableCacheKey = data.cache_key || '';
+        allColumnsCache = data.columns || [];
+        tableChatActiveCacheKey = tableCacheKey;
+        const currentChatState = getTableChatStateForCache(tableCacheKey);
+        tableChatHistory = currentChatState.history || [];
+
+        if (Array.isArray(data.metadata?.process_params) && data.metadata.process_params.length) {
+            processParamMeta = data.metadata.process_params.map((item) => ({
+                key: item.key,
+                label: item.label || defaultProcessParamMeta[item.key]?.label || item.key,
+                unit: item.unit || defaultProcessParamMeta[item.key]?.unit || '',
+                step: item.step || defaultProcessParamMeta[item.key]?.step || 0.1,
+                default_value: item.default_value ?? defaultProcessParams[item.key] ?? 0,
+            }));
+            balanceState.processParams = {};
+            processParamMeta.forEach((item) => {
+                balanceState.processParams[item.key] = Number(item.default_value ?? 0);
+            });
+        } else {
+            processParamMeta = Object.entries(defaultProcessParamMeta).map(([key, meta]) => ({
+                key,
+                label: meta.label,
+                unit: meta.unit,
+                step: meta.step,
+                default_value: meta.default_value,
+            }));
+            balanceState.processParams = { ...defaultProcessParams };
+        }
+
+        populateSelectors(data);
+        previewDiv.innerHTML = renderPreview(data);
+        analysisForm.classList.remove('hidden');
+        warningList.innerHTML = '<p class="empty-state">尚未检测到风险预警。</p>';
+        if (tableCacheKey) {
+            tableChatStatus.textContent = '表格已就绪，可进行对话分析。';
+            openTableChatBtn.disabled = false;
+        }
+
+        openReportBtn.disabled = true;
+        populateTableChatFocus(data.numeric_columns || []);
+        });
+
+        analysisForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!cachedFile) {
+                warningList.innerHTML = '<p class="error">请先上传数据并完成字段预览。</p>';
+                return;
+            }
+
+            selectedColumns = getSelectedColumns();
+            if (!selectedColumns.length) {
+                resultDiv.innerHTML = '<p class="error">请至少选择一个指标进行分析。</p>';
+                return;
+            }
+
+            const timestampColumn = timestampSelect.value || '';
+
+            const formData = new FormData();
+            formData.append('file', cachedFile);
+            formData.append('selected_columns', selectedColumns.join(','));
+            if (timestampColumn) {
+                formData.append('selected_timestamp', timestampColumn);
+            }
+
+            setLoadingState();
+
+            try {
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+                if (!response.ok) {
+                    const error = await response.json();
+                    resultDiv.innerHTML = `<p class="error">分析失败: ${error.detail}</p>`;
+                    return;
+                }
+                const data = await response.json();
+                renderAnalysis(data);
+            } catch (err) {
+                resultDiv.innerHTML = `<p class="error">请求失败: ${err}</p>`;
+            }
+        });
+
+        openParameterAnalysisBtn?.addEventListener('click', () => {
+            if (openParameterAnalysisBtn.hasAttribute('disabled')) {
+                return;
+            }
+            if (!tableCacheKey) {
+                alert('请先上传数据并完成预览。');
+                return;
+            }
+            const selected = getSelectedColumns();
+            const target = selected[0] || numericColumnsCache[0] || '';
+            const params = new URLSearchParams({
+                cache_key: tableCacheKey,
+                parameter: target,
+                time_range: '30d',
+            });
+            if (timestampSelect.value) {
+                params.set('timestamp', timestampSelect.value);
+            }
+            window.open(`/parameter-analysis?${params.toString()}`, '_blank', 'noopener');
+        });
+
+        openModelLabBtn?.addEventListener('click', () => {
+            if (openModelLabBtn.hasAttribute('disabled')) {
+                return;
+            }
+            if (!tableCacheKey) {
+                showToast('请先完成数据预览', 'warning');
+                return;
+            }
+            window.open('/model-lab', '_blank', 'noopener');
+        });
+
+        openKgGraphBtn?.addEventListener('click', () => {
+            if (openKgGraphBtn.hasAttribute('disabled')) {
+                return;
+            }
+            window.open('/kg-graph-lab', '_blank', 'noopener');
+        });
+
+        columnSearch.addEventListener('input', () => {
+            filterColumns(columnSearch.value.trim());
+        });
+
+        selectAllBtn.addEventListener('click', () => {
+            Array.from(columnsSelect.options).forEach((option) => {
+                option.selected = true;
+            });
+        });
+
+        clearAllBtn.addEventListener('click', () => {
+            Array.from(columnsSelect.options).forEach((option) => {
+                option.selected = false;
+            });
+        });
+
+        openAiBtn.addEventListener('click', () => {
+            aiModal.classList.remove('hidden');
+            aiQuestionInput.value = aiChatState.draft || '';
+            if (aiChatState.responseHTML) {
+                aiResponseDiv.classList.remove('empty-state', 'error');
+                aiResponseDiv.innerHTML = aiChatState.responseHTML;
+            }
+            aiQuotaInfo.textContent = aiChatState.quotaText || '';
+        });
+
+        closeAiBtn.addEventListener('click', () => {
+            aiModal.classList.add('hidden');
+        });
+
+        aiQuestionInput.addEventListener('input', () => {
+            aiChatState.draft = aiQuestionInput.value;
+        });
+
+        aiSendBtn.addEventListener('click', async () => {
+            if (aiSendBtn.disabled) {
+                return;
+            }
+            if (!tableCacheKey) {
+                aiResponseDiv.classList.add('error');
+                aiResponseDiv.textContent = '请先上传数据并完成预览。';
+                return;
+            }
+            const rawQuestion = aiQuestionInput.value.trim();
+            if (!rawQuestion) {
+                aiResponseDiv.classList.add('error');
+                aiResponseDiv.textContent = '请输入要咨询的问题。';
+                return;
+            }
+
+            aiResponseDiv.classList.remove('error');
+            aiResponseDiv.classList.remove('empty-state');
+            aiResponseDiv.textContent = 'AI 正在分析，请稍候...';
+
+            try {
+                const response = await fetch('/ai-chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        provider: aiProviderSelect.value,
+                        message: rawQuestion,
+                    })
+                });
+
+                const data = await response.json();
+                if (!data.success) {
+                    aiResponseDiv.classList.add('error');
+                    aiResponseDiv.textContent = data.error || 'AI 服务暂时不可用，请稍后重试。';
+                    aiQuotaInfo.textContent = data.reset_at
+                        ? `剩余可问次数：0 次，本小时重置时间：${data.reset_at}`
+                        : '';
+                    return;
+                }
+
+                aiResponseDiv.classList.remove('error');
+                aiResponseDiv.innerHTML = `<p class="ai-answer">${(data.response || '').replace(/\n/g, '<br>')}</p>`;
+                aiChatState.responseHTML = aiResponseDiv.innerHTML;
+                if (data.remaining !== undefined && data.reset_at) {
+                    aiQuotaInfo.textContent = `模型：${(data.model_used || '未知')}，剩余可问次数：${data.remaining} 次，本小时重置时间：${data.reset_at}`;
+                    aiChatState.quotaText = aiQuotaInfo.textContent;
+                } else {
+                    aiQuotaInfo.textContent = '';
+                    aiChatState.quotaText = '';
+                }
+            } catch (err) {
+                aiResponseDiv.classList.add('error');
+                aiResponseDiv.textContent = `AI 请求失败: ${err}`;
+                aiChatState.responseHTML = `<p class="error">AI 请求失败: ${err}</p>`;
+                aiQuotaInfo.textContent = '';
+            }
+        });
+
+        aiModal.addEventListener('click', (event) => {
+            if (event.target === aiModal || event.target.classList.contains('ai-modal-backdrop')) {
+                aiModal.classList.add('hidden');
+            }
+        });
+
+        let tableChatHistory = [];
+        const tableChatState = {};
+        let tableChatActiveCacheKey = '';
+
+        const aiChatState = { responseHTML: '', quotaText: '', draft: '' };
+
+        function isLocalProvider(provider) {
+            return provider === 'tablegpt' || provider === 'ollama';
+        }
+
+        function getDefaultMineralData() {
+            return {
+                bauxite: [50, 8, 20, 3.76, 0, 5, 0, 0, 13.24],
+                lime: [0, 0, 0, 0, 85, 0, 0, 0, 15],
+                alumina: [99, 0, 0, 0, 0, 0, 0, 1, 0],
+            };
+        }
+
+        function renderProcessInputs() {
+            ensureBalanceStateInitialized();
+            const items = processParamMeta.length
+                ? processParamMeta
+                : Object.entries(defaultProcessParamMeta).map(([key, meta]) => ({
+                      key,
+                      label: meta.label,
+                      unit: meta.unit,
+                      step: meta.step,
+                  }));
+
+            balanceParamGrid.innerHTML = items.map((item) => {
+                const value = balanceState.processParams[item.key];
+                const fallback = defaultProcessParamMeta[item.key] || {};
+                const label = item.label || fallback.label || item.key;
+                const unit = item.unit || fallback.unit || '';
+                const step = item.step || fallback.step || 0.1;
+                return `
+                    <label class="param-field">
+                        <span>${label}</span>
+                        <input type="number" step="${step}" data-param="${item.key}" value="${value}">
+                        <small>${unit}</small>
+                    </label>
+                `;
+            }).join('');
+        }
+
+        function gatherMineralData() {
+            const inputs = balanceModal.querySelectorAll('input[data-mineral]');
+            const mineralData = { bauxite: Array(9).fill(0), lime: Array(9).fill(0), alumina: Array(9).fill(0) };
+            inputs.forEach((input) => {
+                const mineral = input.dataset.mineral;
+                const index = Number(input.dataset.index);
+                const value = Number(input.value || 0);
+                mineralData[mineral][index] = value;
+                balanceState.mineralData[mineral][index] = value;
+            });
+            return mineralData;
+        }
+
+        function gatherProcessParams() {
+            const inputs = balanceModal.querySelectorAll('input[data-param]');
+            const params = {};
+            let modifiedCount = 0;
+            inputs.forEach((input) => {
+                const key = input.dataset.param;
+                const defaultValue = defaultProcessParams[key];
+                const value = Number(input.value || defaultValue);
+                params[key] = value;
+                balanceState.processParams[key] = value;
+                if (Number.isFinite(value) && Math.abs(value - defaultValue) > 1e-6) {
+                    modifiedCount += 1;
+                }
+            });
+            return { params, modifiedCount };
+        }
+
+        async function executeBalanceCalculation() {
+            const mineralData = gatherMineralData();
+            const { params, modifiedCount } = gatherProcessParams();
+
+            const payload = {
+                mineral_data: mineralData,
+                process_params: params
+            };
+
+            balanceStatusDiv.textContent = modifiedCount > 0 ? `已调整 ${modifiedCount} 个工艺参数，计算将使用最新输入值。` : '使用默认预设参数进行计算。';
+            balanceResultDiv.innerHTML = '<p class="loading-text">正在执行平衡计算，请稍候...</p>';
+
+            try {
+                const response = await fetch('/calculate-equilibrium', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) {
+                    const error = await response.json();
+                    balanceResultDiv.innerHTML = `<p class="error">平衡计算失败: ${error.detail || response.status}</p>`;
+                    return;
+                }
+                const data = await response.json();
+                balanceResultDiv.innerHTML = renderBalanceResult(data);
+                balanceState.resultHTML = balanceResultDiv.innerHTML;
+                balanceState.statusText = balanceStatusDiv.textContent || '';
+            } catch (err) {
+                balanceResultDiv.innerHTML = `<p class="error">平衡计算请求失败: ${err}</p>`;
+                balanceState.resultHTML = balanceResultDiv.innerHTML;
+                balanceState.statusText = balanceStatusDiv.textContent || '请求失败';
+            }
+        }
+
+        openBalanceBtn.addEventListener('click', async () => {
+            ensureBalanceStateInitialized();
+            balanceModal.classList.remove('hidden');
+            applyBalanceState();
+        });
+
+        closeBalanceBtn.addEventListener('click', () => {
+            persistBalanceState();
+            balanceModal.classList.add('hidden');
+        });
+
+        balanceModal.addEventListener('click', (event) => {
+            if (event.target === balanceModal || event.target.classList.contains('balance-modal-backdrop')) {
+                persistBalanceState();
+                balanceModal.classList.add('hidden');
+            }
+        });
+
+        submitBalanceBtn.addEventListener('click', () => {
+            executeBalanceCalculation();
+        });
+
+        resetBalanceBtn.addEventListener('click', () => {
+            const defaultsMineral = getDefaultMineralData();
+            const mineralInputs = balanceModal.querySelectorAll('input[data-mineral]');
+            mineralInputs.forEach((input) => {
+                const mineral = input.dataset.mineral;
+                const index = Number(input.dataset.index);
+                const value = defaultsMineral[mineral][index];
+                input.value = value;
+                balanceState.mineralData[mineral][index] = value;
+            });
+
+            const paramInputs = balanceModal.querySelectorAll('input[data-param]');
+            paramInputs.forEach((input) => {
+                const key = input.dataset.param;
+                const value = defaultProcessParams[key];
+                input.value = value;
+                balanceState.processParams[key] = value;
+            });
+            balanceStatusDiv.textContent = '已恢复默认预设参数，请重新计算。';
+            balanceState.statusText = balanceStatusDiv.textContent;
+            balanceResultDiv.innerHTML = '<p class="loading-text">请点击"开始计算"以生成平衡结果。</p>';
+            balanceState.resultHTML = balanceResultDiv.innerHTML;
+        });
+
+        function applyBalanceState() {
+            ensureBalanceStateInitialized();
+            renderProcessInputs();
+
+            const mineralInputs = balanceModal.querySelectorAll('input[data-mineral]');
+            mineralInputs.forEach((input) => {
+                const mineral = input.dataset.mineral;
+                const index = Number(input.dataset.index);
+                input.value = balanceState.mineralData[mineral][index];
+            });
+
+            const paramInputs = balanceModal.querySelectorAll('input[data-param]');
+            paramInputs.forEach((input) => {
+                const key = input.dataset.param;
+                input.value = balanceState.processParams[key];
+            });
+
+            balanceResultDiv.innerHTML = balanceState.resultHTML;
+            balanceStatusDiv.textContent = balanceState.statusText;
+        }
+
+        function persistBalanceState() {
+            gatherMineralData();
+            gatherProcessParams();
+            balanceState.resultHTML = balanceResultDiv.innerHTML;
+            balanceState.statusText = balanceStatusDiv.textContent || '';
+        }
+
+        function populateSelectors(data) {
+            populateColumns(data.numeric_columns || [], data.suggested_key_parameters || []);
+            populateTimestampOptions(data);
+            if (data.numeric_columns && data.numeric_columns.length) {
+                openParameterAnalysisBtn?.removeAttribute('disabled');
+                openModelLabBtn?.removeAttribute('disabled');
+                openKgGraphBtn?.removeAttribute('disabled');
+            } else {
+                openParameterAnalysisBtn?.setAttribute('disabled', 'disabled');
+                openModelLabBtn?.setAttribute('disabled', 'disabled');
+                openKgGraphBtn?.setAttribute('disabled', 'disabled');
+            }
+        }
+
+        function populateColumns(columns, suggested) {
+            columnsSelect.innerHTML = '';
+            columns.forEach((column) => {
+                const option = document.createElement('option');
+                option.value = column;
+                option.textContent = column;
+                columnsSelect.appendChild(option);
+            });
+            Array.from(columnsSelect.options).forEach((option, idx) => {
+                option.selected = suggested.includes(option.value) || idx < 3;
+            });
+        }
+
+        function filterColumns(keyword) {
+            const lowerKeyword = keyword.toLowerCase();
+            Array.from(columnsSelect.options).forEach((option) => {
+                const match = option.value.toLowerCase().includes(lowerKeyword);
+                option.hidden = !match;
+            });
+        }
+
+        function populateTimestampOptions(data) {
+            timestampSelect.innerHTML = '<option value="">自动识别</option>';
+            (data.timestamp_candidates || []).forEach((column) => {
+                const option = document.createElement('option');
+                option.value = column;
+                option.textContent = column;
+                if (data.metadata.timestamp_column === column) {
+                    option.selected = true;
+                }
+                timestampSelect.appendChild(option);
+            });
+        }
+
+        function getSelectedColumns() {
+            return Array.from(columnsSelect.selectedOptions).map((option) => option.value);
+        }
+
+        function renderPreview(data) {
+            const metadata = data.metadata;
+            const timestamps = data.timestamp_candidates || [];
+            const keyParams = data.suggested_key_parameters || [];
+            const missingRatio = typeof metadata.missing_ratio === 'number' ? metadata.missing_ratio : 0;
+
+            return `
+                <div class="preview-metrics">
+                    <div class="metric-card"><span>记录数</span><strong>${metadata.row_count}</strong></div>
+                    <div class="metric-card"><span>字段数</span><strong>${metadata.column_count}</strong></div>
+                    <div class="metric-card"><span>缺失率</span><strong>${(missingRatio * 100).toFixed(1)}%</strong></div>
+                </div>
+                <div class="preview-tags">
+                    <h3>时间字段候选</h3>
+                    ${timestamps.length ? `<div class="tag-list">${timestamps.map((item) => `<span class="tag">${item}</span>`).join('')}</div>` : '<p class="tag-placeholder">未识别</p>'}
+                </div>
+            `;
+        }
+
+        function setLoadingState() {
+            resultDiv.innerHTML = '<p class="loading-text">分析中，请稍候...</p>';
+            statChartDiv.innerHTML = '<p class="loading-text">计算风险排名...</p>';
+            riskTrendDiv.innerHTML = '<p class="loading-text">生成趋势预测...</p>';
+            riskSourceDiv.innerHTML = '<p class="loading-text">识别风险源...</p>';
+            forecastChartDiv.innerHTML = '<p class="loading-text">绘制趋势图...</p>';
+            forecastLegend.innerHTML = '';
+        }
+
+        function renderAnalysis(data) {
+            const { report, forecast } = data;
+            renderWarnings(report);
+            renderDetails(report);
+            renderStats(report);
+            renderRiskSources(report);
+            renderForecastContent(forecast);
+
+            if (report && report.length) {
+                openReportBtn.disabled = false;
+                exportExcelBtn.disabled = false;
+                reportState.columns = [...selectedColumns];
+                reportState.timestampColumn = timestampSelect.value || '';
+                reportState.content = '';
+                reportState.draft = '';
+                reportState.generatedAt = '';
+            } else {
+                openReportBtn.disabled = true;
+                exportExcelBtn.disabled = true;
+                resetReportState();
+            }
+        }
+
+        function renderWarnings(report) {
+            const alerts = report.filter((item) => item.current_status !== '正常');
+            if (!alerts.length) {
+                warningList.innerHTML = '<p class="empty-state">暂无异常指标，系统处于稳态。</p>';
+                return;
+            }
+            warningList.innerHTML = alerts.map((item) => {
+                const recs = Array.isArray(item.recommendations) ? item.recommendations : [];
+                return `
+                    <div class="warning-item ${item.current_status === '高' ? 'warning-high' : 'warning-low'}">
+                        <div>
+                            <strong>${item.parameter}</strong>
+                            <span>${item.current_status} · ${item.trend}</span>
+                        </div>
+                        <p>建议：${recs.at(0) || '请关注参数波动情况。'}</p>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderDetails(report) {
+            if (!report.length) {
+                resultDiv.innerHTML = '<p class="empty-state">未获取到有效指标。</p>';
+                return;
+            }
+            resultDiv.innerHTML = report.map((item) => {
+                const recs = Array.isArray(item.recommendations) ? item.recommendations : [];
+                const factors = Array.isArray(item.influence_factors) ? item.influence_factors : [];
+                    const latestText = item.latest_value !== null && item.latest_value !== undefined ? formatNumber(item.latest_value) : '—';
+                    const meanText = item.mean_value !== null && item.mean_value !== undefined ? formatNumber(item.mean_value) : '—';
+                    const stdText = item.std_dev !== null && item.std_dev !== undefined ? formatNumber(item.std_dev) : '—';
+                return `
+                    <article class="detail-card">
+                        <header>
+                            <h3>${item.parameter}</h3>
+                            <span class="status-badge status-${item.current_status}">${item.current_status}</span>
+                        </header>
+                        <p><span>短期趋势：</span>${item.trend}</p>
+                            <p><span>最新值：</span>${latestText}</p>
+                            <p><span>均值 / 标准差：</span>${meanText} / ${stdText}</p>
+                        <p><span>预测摘要：</span>${item.forecast_summary || '——'}</p>
+                        <p><span>预测趋势：</span>${item.forecast_trend}</p>
+                        <p><span>影响因子：</span>${factors.length ? factors.join('，') : '待识别'}</p>
+                        <div class="recommendations">
+                            ${recs.length ? recs.map((rec) => `<span>${rec}</span>`).join('') : '<span>未提供建议</span>'}
+                        </div>
+                    </article>
+                `;
+            }).join('');
+        }
+
+        function renderStats(report) {
+            if (!report.length) {
+                statChartDiv.innerHTML = '<p class="empty-state">暂无统计结果。</p>';
+                return;
+            }
+            const sorted = [...report].sort((a, b) => (b.std_dev || 0) - (a.std_dev || 0)).slice(0, 5);
+            statChartDiv.innerHTML = `
+                <ol class="ranking-list">
+                    ${sorted.map((item, index) => `
+                        <li>
+                            <span class="rank">${index + 1}</span>
+                            <div>
+                                <strong>${item.parameter}</strong>
+                                <small>波动度：${formatNumber(item.std_dev)}</small>
+                            </div>
+                            <span class="trend">${item.trend}</span>
+                        </li>
+                    `).join('')}
+                </ol>
+            `;
+        }
+
+        function renderRiskSources(report) {
+            const influenceCounter = {};
+            report.forEach((item) => {
+                const factors = Array.isArray(item.influence_factors) ? item.influence_factors : [];
+                factors.forEach((factor) => {
+                    if (!factor) return;
+                    influenceCounter[factor] = (influenceCounter[factor] || 0) + 1;
+                });
+            });
+            const sorted = Object.entries(influenceCounter)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 6);
+            if (!sorted.length) {
+                riskSourceDiv.innerHTML = '<p class="empty-state">暂无风险源数据。</p>';
+                return;
+            }
+            const total = sorted.reduce((sum, [, count]) => sum + count, 0);
+            riskSourceDiv.innerHTML = `
+                <div class="risk-source-list">
+                    ${sorted.map(([factor, count]) => `
+                        <div class="risk-source-item">
+                            <span>${factor}</span>
+                            <strong>${Math.round((count / total) * 100)}%</strong>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function renderForecastContent(forecast) {
+            renderForecastSummary(forecast);
+            renderForecastChart(forecast);
+        }
+
+        function renderForecastSummary(forecast) {
+            if (!forecast || !forecast.predictions) {
+                riskTrendDiv.innerHTML = '<p class="empty-state">暂无预测结果。</p>';
+                return;
+            }
+            selectedColumns = getSelectedColumns();
+            if (!selectedColumns.length) {
+                riskTrendDiv.innerHTML = '<p class="empty-state">所选指标缺少预测数据。</p>';
+                return;
+            }
+            riskTrendDiv.innerHTML = `
+                <ul class="trend-list">
+                    ${selectedColumns.slice(0, 6).map((column) => {
+                        const summary = forecast.summary?.[column];
+                        const trend = forecast.trends?.[column];
+                        return `
+                            <li>
+                                <strong>${column}</strong>
+                                <span>${summary || trend || '暂无摘要'}</span>
+                            </li>
+                        `;
+                    }).join('')}
+                </ul>
+            `;
+        }
+
+        function renderForecastChart(forecast) {
+            forecastLegend.innerHTML = '';
+            if (!forecast || !forecast.predictions) {
+                forecastChartDiv.innerHTML = '<p class="empty-state">暂无预测数据。</p>';
+                return;
+            }
+
+            selectedColumns = getSelectedColumns();
+            const series = selectedColumns
+                .map((column, index) => {
+                    const historyTail = (forecast.history_tail?.[column] || []);
+                    const historyPoints = historyTail
+                        .map((entry) => ({
+                            type: 'history',
+                            label: entry.index,
+                            value: Number(entry.value),
+                        }))
+                        .filter((point) => !Number.isNaN(point.value));
+
+                    if (!historyPoints.length) {
+                        return null;
+                    }
+                    return {
+                        column,
+                        color: palette[index % palette.length],
+                        points: historyPoints,
+                        historyCount: historyPoints.length,
+                    };
+                })
+                .filter(Boolean);
+
+            if (!series.length) {
+                forecastChartDiv.innerHTML = '<p class="empty-state">所选指标缺少预测数据。</p>';
+                return;
+            }
+
+            const labels = generateUnifiedLabels(series);
+            const allValues = series.flatMap((item) => item.points.map((point) => point.value));
+            const minValue = Math.min(...allValues);
+            const maxValue = Math.max(...allValues);
+            const padding = (maxValue - minValue) * 0.1 || 1;
+            const chartMin = minValue - padding;
+            const chartMax = maxValue + padding;
+            const width = 640;
+            const height = 320;
+            const leftPadding = 60;
+            const bottomPadding = 80;
+            const topPadding = 20;
+            const rightPadding = 20;
+
+            const axisLines = `
+                <line x1="${leftPadding}" y1="${height - bottomPadding}" x2="${width - rightPadding}" y2="${height - bottomPadding}" class="axis-line" />
+                <line x1="${leftPadding}" y1="${topPadding}" x2="${leftPadding}" y2="${height - bottomPadding}" class="axis-line" />
+            `;
+
+            const yTicks = 4;
+            const yTickElements = Array.from({ length: yTicks + 1 }, (_, index) => {
+                const value = chartMin + ((chartMax - chartMin) * index) / yTicks;
+                const y = height - bottomPadding - ((value - chartMin) / (chartMax - chartMin)) * (height - topPadding - bottomPadding);
+                return `
+                    <line x1="${leftPadding}" y1="${y}" x2="${width - rightPadding}" y2="${y}" class="chart-grid-line" />
+                    <text x="${leftPadding - 10}" y="${y + 4}" class="axis-label">${formatNumber(value)}</text>
+                `;
+            }).join('');
+
+            const xTickElements = labels.map((label, index) => {
+                const x = leftPadding + (index / Math.max(1, labels.length - 1)) * (width - leftPadding - rightPadding);
+                const y = height - bottomPadding + 32;
+                return `<g transform="translate(${x},${y}) rotate(-30)"><text class="axis-label" text-anchor="end">${label}</text></g>`;
+            }).join('');
+
+            const lines = series.map((item) => {
+                const points = item.points.map((point, index) => {
+                    const x = leftPadding + (index / Math.max(1, labels.length - 1)) * (width - leftPadding - rightPadding);
+                    const y = height - bottomPadding - ((point.value - chartMin) / (chartMax - chartMin)) * (height - topPadding - bottomPadding);
+                    return `${x},${y}`;
+                }).join(' ');
+
+                const dots = item.points.map((point, index) => {
+                    const x = leftPadding + (index / Math.max(1, labels.length - 1)) * (width - leftPadding - rightPadding);
+                    const y = height - bottomPadding - ((point.value - chartMin) / (chartMax - chartMin)) * (height - topPadding - bottomPadding);
+                    const attributes = `data-point="${point.type}" data-column="${item.column}" data-label="${point.label}" data-value="${point.value}" cx="${x}" cy="${y}"`;
+                    return `<circle ${attributes} r="4" class="chart-dot history" fill="${item.color}" />`;
+                }).join('');
+
+                return `
+                    <polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2.5" />
+                    ${dots}
+                `;
+            }).join('');
+
+            forecastChartDiv.innerHTML = `
+                <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+                    ${axisLines}
+                    ${yTickElements}
+                    ${xTickElements}
+                    ${lines}
+                </svg>
+            `;
+
+            attachChartTooltip();
+
+            forecastLegend.innerHTML = series.map((item) => `
+                <span class="legend-item"><span class="legend-swatch" style="background:${item.color}"></span>${item.column}</span>
+            `).join('');
+        }
+
+        function generateUnifiedLabels(series) {
+            const maxLength = Math.max(...series.map((item) => item.points.length), 0);
+            const labels = [];
+            for (let index = 0; index < maxLength; index += 1) {
+                const labelSource = series.find((item) => item.points[index]);
+                const label = labelSource?.points[index]?.label ?? `T${index}`;
+                labels.push(label);
+            }
+            return labels;
+        }
+
+        function buildStarPath(cx, cy, outerRadius, innerRadius, points) {
+            const step = Math.PI / points;
+            const coordinates = [];
+            for (let i = 0; i < 2 * points; i += 1) {
+                const radius = i % 2 === 0 ? outerRadius : innerRadius;
+                const angle = i * step - Math.PI / 2;
+                const x = cx + radius * Math.cos(angle);
+                const y = cy + radius * Math.sin(angle);
+                coordinates.push(`${x},${y}`);
+            }
+            return coordinates.join(' ');
+        }
+
+        function attachChartTooltip() {
+            let tooltip = document.getElementById('chart-tooltip');
+            if (!tooltip) {
+                tooltip = document.createElement('div');
+                tooltip.id = 'chart-tooltip';
+                tooltip.className = 'chart-tooltip hidden';
+                forecastChartDiv.appendChild(tooltip);
+            }
+
+            const hideTooltip = () => {
+                tooltip.classList.add('hidden');
+            };
+
+            const dots = forecastChartDiv.querySelectorAll('[data-point]');
+            dots.forEach((dot) => {
+                dot.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    const rect = forecastChartDiv.getBoundingClientRect();
+                    const column = dot.getAttribute('data-column') || '';
+                    const label = dot.getAttribute('data-label') || '';
+                    const value = dot.getAttribute('data-value');
+
+                    tooltip.innerHTML = `
+                        <strong>${column}</strong><br>
+                        <span>${label}</span><br>
+                        <span>${formatNumber(Number(value))}</span>
+                    `;
+
+                    const clientX = event.clientX;
+                    const clientY = event.clientY;
+                    tooltip.style.left = `${clientX - rect.left + 12}px`;
+                    tooltip.style.top = `${clientY - rect.top - 10}px`;
+                    tooltip.classList.remove('hidden');
+                });
+            });
+
+            forecastChartDiv.addEventListener('click', hideTooltip);
+        }
+
+        function formatNumber(value) {
+            if (value === null || value === undefined || Number.isNaN(value)) {
+                return '—';
+            }
+            return Number(value).toFixed(2);
+        }
+
+        let reportGenerating = false;
+
+        function formatReportTime(value) {
+            if (!value) return '';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) {
+                return value;
+            }
+            return date.toLocaleString('zh-CN', { hour12: false });
+        }
+
+        function setReportMessage(text, state = 'info') {
+            if (!reportMessage) return;
+            reportMessage.textContent = text;
+            reportMessage.classList.remove('empty-state', 'error');
+            if (state === 'empty') {
+                reportMessage.classList.add('empty-state');
+            } else if (state === 'error') {
+                reportMessage.classList.add('error');
+            }
+        }
+
+        function applyReportStateToUI() {
+            if (!reportColumnsSpan || !reportTimestampSpan) return;
+            reportColumnsSpan.textContent = reportState.columns.length ? reportState.columns.join('，') : '--';
+            reportTimestampSpan.textContent = reportState.timestampColumn || '自动识别';
+            const text = reportState.draft || reportState.content || '';
+            if (reportEditor) {
+                reportEditor.value = text;
+                if (text.trim()) {
+                    reportEditor.removeAttribute('disabled');
+                } else {
+                    reportEditor.setAttribute('disabled', 'disabled');
+                }
+            }
+            if (reportExportBtn) {
+                reportExportBtn.disabled = !text.trim();
+            }
+            if (text.trim()) {
+                const label = reportState.generatedAt
+                    ? `生成时间：${formatReportTime(reportState.generatedAt)}`
+                    : '报表已生成，可编辑内容。';
+                setReportMessage(label, 'info');
+            } else {
+                setReportMessage('请生成报表后查看。', 'empty');
+            }
+        }
+
+        function persistReportState() {
+            if (reportEditor) {
+                reportState.draft = reportEditor.value;
+            }
+        }
+
+        async function generateReport() {
+            if (!tableCacheKey) {
+                setReportMessage('请先上传数据并完成分析。', 'error');
+                reportExportBtn?.setAttribute('disabled', 'disabled');
+                return;
+            }
+
+            const columns = reportState.columns.length ? [...reportState.columns] : getSelectedColumns();
+            if (!columns.length) {
+                setReportMessage('请先完成指标分析，再生成报表。', 'error');
+                reportExportBtn?.setAttribute('disabled', 'disabled');
+                return;
+            }
+
+            if (reportGenerating) {
+                return;
+            }
+            reportGenerating = true;
+            setReportMessage('报表生成中，请稍候...', 'info');
+            reportEditor?.setAttribute('disabled', 'disabled');
+            openReportBtn?.setAttribute('disabled', 'disabled');
+            reportExportBtn?.setAttribute('disabled', 'disabled');
+
+            const timestampValue = reportState.timestampColumn || timestampSelect.value || '';
+
+            try {
+                const response = await fetch('/report/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cache_key: tableCacheKey,
+                        columns,
+                        timestamp_column: timestampValue,
+                    }),
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.detail || data.error || '生成失败');
+                }
+                const report = data.report || {};
+                reportState.content = report.content || '';
+                reportState.draft = reportState.content;
+                reportState.generatedAt = report.generated_at || '';
+                reportState.columns = Array.isArray(report.columns) && report.columns.length ? report.columns : columns;
+                reportState.timestampColumn = report.timestamp_column || timestampValue || '';
+                applyReportStateToUI();
+                openReportBtn?.removeAttribute('disabled');
+            } catch (err) {
+                setReportMessage(`报表生成失败：${err.message || err}`, 'error');
+                reportExportBtn?.setAttribute('disabled', 'disabled');
+                openReportBtn?.removeAttribute('disabled');
+            } finally {
+                reportGenerating = false;
+                reportEditor?.removeAttribute('disabled');
+            }
+        }
+
+        function renderBalanceResult(result) {
+            if (!result) {
+                return '<p class="error">未获取到平衡计算结果。</p>';
+            }
+            const sections = [
+                { key: 'materials', title: '主要物料平衡', unit: 'kg/h' },
+                { key: 'efficiency', title: '工艺效率指标', unit: '' },
+                { key: 'intermediate', title: '中间过程参数', unit: '' }
+            ];
+            return sections.map(({ key, title, unit }) => {
+                const items = result[key] || {};
+                const rows = Object.entries(items).map(([name, value]) => {
+                    const label = formatBalanceField(name);
+                    const displayValue = formatNumber(value);
+                    const unitText = resolveBalanceUnit(key, name, unit);
+                    return `<tr><td>${label}</td><td>${displayValue}</td><td>${unitText}</td></tr>`;
+                }).join('');
+                return `<section><h3>${title}</h3><table class="balance-table"><thead><tr><th>项目</th><th>数值</th><th>单位</th></tr></thead><tbody>${rows}</tbody></table></section>`;
+            }).join('');
+        }
+
+        function formatBalanceField(key) {
+            const mapping = {
+                A28: '铝矿石需求量',
+                B28: '石灰需求量',
+                L48: '补充碱液量',
+                L49: '苛化碱液量',
+                L47: '循环母液量',
+                L50: '原矿浆量',
+                L57: '溶出液量',
+                D6: '溶出矿浆自然蒸发水',
+                A61: '溶出赤泥量',
+                B65: '弃赤泥量',
+                G80: '粗液量',
+                J80: '精液量',
+                J82: '赤泥洗水量',
+                H82: '赤泥一次洗液',
+                C108: '氢氧化铝产量',
+                H115: '种分母液量',
+                G74: '蒸发水量',
+                H108: '石灰乳需求量',
+                E80: '稀释液量',
+                wash_water_total: '氢氧化铝总洗水',
+                F136: '循环效率',
+                F137: '理论溶出率',
+                F138: '实际溶出率',
+                F139: '相对溶出率',
+                F140: '理论减耗',
+                F142: '分解率',
+                F143: '矿浆折合比',
+                B24: '溶出残渣 SiO₂ 含量',
+                A26: '总损失率',
+                B26: '有效利用率',
+                A35: 'CO₂ 需求量',
+                B35: '石灰需求量',
+                C35: '工艺水需求',
+                D35: '总 CO₂ 需求',
+                E35: '总石灰需求',
+                H53: '溶出赤泥总量',
+                I53: '溶出赤泥水分',
+                A63: '苛化需求碱量',
+                B63: '苛化需求石灰',
+                E61: '洗涤水量',
+                I80: '压滤水量',
+                K80: '叶滤石灰乳量',
+                A108: '分解液量',
+                B108: '分解 CO₂',
+                C108: '分解总液量'
+            };
+            return mapping[key] || key;
+        }
+
+        function resolveBalanceLabel(sectionKey, key) {
+            const mapping = {
+                materials: {
+                    bauxite: '铝土矿',
+                    lime: '石灰',
+                    alumina: '成品氧化铝',
+                },
+                process: {
+                    B6: '循环母液 Nk',
+                    B7: '循环母液 Nc',
+                    B8: '循环母液 αk',
+                    B9: '循环母液密度 ρ',
+                    B10: '补充碱液 Nk',
+                    B11: '补充碱液密度 ρ',
+                    B12: '石灰添加量',
+                    B13: '赤泥铝硅比',
+                    B14: '赤泥钠硅比',
+                    B15: '赤泥灼减',
+                    B16: '溶出稀释 Nk',
+                    B17: '溶出稀释 αk',
+                    B18: '溶出 αk',
+                    B19: '溶出稀释密度 ρ',
+                    B20: '沉降底流固含',
+                    B21: '末次洗涤底流固含',
+                    D6: '溶出矿浆蒸发水',
+                    D7: '赤泥附液 Na₂O 损失',
+                    D8: '溶出水解铝',
+                    D9: '吨干赤泥附液损失',
+                    D10: '种分浓缩率',
+                    D11: '吨氧化铝吸收 CO₂',
+                    D12: '滤饼含水率',
+                    D13: '吨氧化铝新洗水',
+                    D14: '洗涤滤饼含水率',
+                    D15: '未知参数 D15',
+                    D16: '未知参数 D16',
+                    D17: '未知参数 D17',
+                    D18: '未知参数 D18',
+                    F6: '未知参数 F6',
+                    F7: '未知参数 F7',
+                    F8: '未知参数 F8',
+                    F9: '未知参数 F9',
+                    F10: '未知参数 F10',
+                    F11: '未知参数 F11',
+                    F12: '未知参数 F12',
+                    F13: '未知参数 F13',
+                    F14: '未知参数 F14',
+                    F15: '未知参数 F15',
+                    F16: '未知参数 F16',
+                    F17: '未知参数 F17',
+                    F18: '未知参数 F18',
+                },
+                efficiency: {
+                    F136: '循环效率',
+                    F137: '%',
+                    F138: '%',
+                    F139: '%',
+                    F140: 'kg/t',
+                    F142: '%',
+                    F143: 'm³/t'
+                },
+                intermediate: {
+                    B24: '%',
+                    A26: '%',
+                    B26: '%',
+                    A35: 'kg/h',
+                    B35: 'kg/h',
+                    C35: 'kg/h',
+                    D35: 'kg/h',
+                    E35: 'kg/h',
+                    H53: 'kg/h',
+                    I53: 'kg/h',
+                    A63: 'kg/h',
+                    B63: 'kg/h',
+                    E61: 'kg/h',
+                    I80: 'kg/h',
+                    K80: 'kg/h',
+                    A108: 'kg/h',
+                    B108: 'kg/h',
+                    C108: 'kg/h'
+                }
+            };
+            const group = mapping[sectionKey] || mapping.process;
+            if (sectionKey === 'intermediate' || sectionKey === 'efficiency') {
+                return (mapping[sectionKey] && mapping[sectionKey][key]) || key;
+            }
+            return (group && group[key]) || key;
+        }
+
+        function resolveBalanceUnit(sectionKey, fieldKey, defaultUnit) {
+            const customUnits = {
+                efficiency: {
+                    F136: 'kg/m³',
+                    F137: '%',
+                    F138: '%',
+                    F139: '%',
+                    F140: 'kg/t',
+                    F142: '%',
+                    F143: 'm³/t'
+                },
+                intermediate: {
+                    B24: '%',
+                    A26: '%',
+                    B26: '%',
+                    A35: 'kg/h',
+                    B35: 'kg/h',
+                    C35: 'kg/h',
+                    D35: 'kg/h',
+                    E35: 'kg/h',
+                    H53: 'kg/h',
+                    I53: 'kg/h',
+                    A63: 'kg/h',
+                    B63: 'kg/h',
+                    E61: 'kg/h',
+                    I80: 'kg/h',
+                    K80: 'kg/h',
+                    A108: 'kg/h',
+                    B108: 'kg/h',
+                    C108: 'kg/h'
+                }
+            };
+
+            if (sectionKey === 'materials') {
+                return defaultUnit || 'kg/h';
+            }
+            const sectionUnits = customUnits[sectionKey] || {};
+            return sectionUnits[fieldKey] || defaultUnit || '';
+        }
+
+        function formatQuotaText(data) {
+            if (data && Number.isInteger(data.remaining) && data.reset_at) {
+                return `剩余可用次数：${data.remaining}，重置时间：${data.reset_at}`;
+            }
+            if (data && Number.isInteger(data.remaining)) {
+                return `剩余可用次数：${data.remaining}`;
+            }
+            return '';
+        }
+        function renderAnswerHtml(rawText) {
+            if (!rawText) {
+                return '';
+            }
+            const segments = rawText
+                .split(/\n{2,}/)
+                .map(segment => segment.trim())
+                .filter(Boolean)
+                .map(segment => segment.replace(/\n/g, '<br>'));
+
+            return segments.map(paragraph => `<p>${paragraph}</p>`).join('');
+        }
+
+        function getTableChatStateForCache(cacheKey) {
+            const key = cacheKey || 'default';
+            if (!tableChatState[key]) {
+                tableChatState[key] = { responseHTML: '', quotaText: '', draft: '', history: [] };
+            }
+            return tableChatState[key];
+        }
+
+        openTableChatBtn.addEventListener('click', () => {
+            if (!tableCacheKey) {
+                tableChatStatus.textContent = '请先上传并预览数据。';
+                return;
+            }
+            tableChatActiveCacheKey = tableCacheKey;
+            const chatState = getTableChatStateForCache(tableCacheKey);
+            tableChatModal.classList.remove('hidden');
+            tableChatHistory = chatState.history || [];
+            renderTableChatOutput();
+            refreshProviderStatus();
+        });
+
+        closeTableChatBtn.addEventListener('click', () => {
+            persistTableChatState();
+            tableChatModal.classList.add('hidden');
+        });
+
+        tableChatModal.addEventListener('click', (event) => {
+            if (event.target === tableChatModal || event.target.classList.contains('table-chat-backdrop')) {
+                persistTableChatState();
+                tableChatModal.classList.add('hidden');
+            }
+        });
+
+        tableChatProviderSelect.addEventListener('change', () => {
+            const chatState = getTableChatStateForCache(tableChatActiveCacheKey || tableCacheKey);
+            tableChatHistory = chatState.history || [];
+            renderTableChatOutput();
+        });
+
+        tableChatQuestion.addEventListener('input', () => {
+            const activeKey = tableChatActiveCacheKey || tableCacheKey;
+            if (!activeKey) {
+                return;
+            }
+            const chatState = getTableChatStateForCache(activeKey);
+            chatState.draft = tableChatQuestion.value;
+        });
+
+        tableChatSendBtn.addEventListener('click', async () => {
+            if (tableChatSendBtn.hasAttribute('disabled')) {
+                return;
+            }
+            if (!tableCacheKey) {
+                tableChatResponse.classList.add('error');
+                tableChatResponse.textContent = '请先上传数据并完成预览。';
+                return;
+            }
+            const chatState = getTableChatStateForCache(tableCacheKey);
+            tableChatActiveCacheKey = tableCacheKey;
+            const rawQuestion = (tableChatQuestion.value || '').trim();
+            if (!rawQuestion) {
+                tableChatResponse.classList.add('error');
+                tableChatResponse.textContent = '请输入需要分析的问题。';
+                return;
+            }
+
+            const processContext = resolveProcessContext(rawQuestion);
+            if (!processContext.success && !(tableChatSkipValidation && tableChatSkipValidation.checked)) {
+                tableChatResponse.classList.add('error');
+                if (processContext.reason === 'missing_keyword') {
+                    tableChatResponse.textContent = '请在提问中明确工序名称，例如：溶出、沉降、煅烧等。';
+                } else if (processContext.reason === 'no_columns') {
+                    const hints = processContext.matches?.length ? `识别到关键词：${processContext.matches.join('，')}，` : '';
+                    tableChatResponse.textContent = `${hints}但未在当前数据中发现与"${processContext.process}"相关的字段，请确认表格是否包含该工序或尝试其他关键词。`;
+                } else {
+                    tableChatResponse.textContent = '无法识别提问上下文，请重新表述问题。';
+                }
+                return;
+            }
+
+            tableChatResponse.classList.remove('empty-state', 'error');
+            tableChatResponse.textContent = '表格AI正在分析，请稍候...';
+            chatState.draft = rawQuestion;
+            tableChatSendBtn.dataset.originalLabel = tableChatSendBtn.textContent;
+            tableChatSendBtn.disabled = true;
+            tableChatSendBtn.textContent = '分析中...';
+
+            const provider = tableChatProviderSelect.value;
+            const historyPayload = isLocalProvider(provider) ? tableChatHistory : [];
+            const focusFromSelect = tableChatFocusSelect
+                ? Array.from(tableChatFocusSelect.selectedOptions).map((opt) => opt.value)
+                : [];
+            const focusColumns = Array.from(new Set([
+                ...focusFromSelect,
+                ...(processContext.success ? processContext.columns.slice(0, 8) : []),
+            ]));
+
+            try {
+                const response = await fetch('/table-chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        provider,
+                        question: processContext.success ? processContext.enrichedQuestion : rawQuestion,
+                        cache_key: tableChatActiveCacheKey,
+                        history: historyPayload,
+                        focus_columns: focusColumns,
+                    }),
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    tableChatResponse.classList.add('error');
+                    const errorText = data.detail || data.error || '表格对话失败，请稍后重试。';
+                    tableChatResponse.textContent = errorText;
+                    tableChatQuotaInfo.textContent = formatQuotaText(data);
+                    chatState.responseHTML = `<p class="error">${errorText}</p>`;
+                    chatState.quotaText = tableChatQuotaInfo.textContent;
+                    return;
+                }
+                if (isLocalProvider(provider)) {
+                    chatState.history = chatState.history || [];
+                    chatState.history.push({ role: 'user', content: rawQuestion });
+                    chatState.history.push({ role: 'assistant', content: data.answer || '' });
+                    tableChatHistory = chatState.history;
+                    chatState.quotaText = '';
+                    chatState.draft = '';
+                    tableChatQuestion.value = '';
+                    renderTableChatOutput();
+                } else {
+                    tableChatResponse.classList.remove('error');
+                    const renderedAnswer = renderAnswerHtml(data.answer || '分析完成，但未生成有效答案。');
+                    const quotaText = formatQuotaText(data);
+                    tableChatResponse.innerHTML = renderedAnswer;
+                    tableChatQuotaInfo.textContent = quotaText;
+                    chatState.responseHTML = renderedAnswer;
+                    chatState.quotaText = quotaText;
+                    chatState.draft = '';
+                    tableChatQuestion.value = '';
+                }
+            } catch (err) {
+                tableChatResponse.classList.add('error');
+                const errorText = `请求失败：${err}`;
+                tableChatResponse.textContent = errorText;
+                tableChatQuotaInfo.textContent = '';
+                chatState.responseHTML = `<p class="error">${errorText}</p>`;
+                chatState.quotaText = '';
+            }
+            tableChatSendBtn.disabled = false;
+            const originalLabel = tableChatSendBtn.dataset.originalLabel || '分析';
+            tableChatSendBtn.textContent = originalLabel;
+            delete tableChatSendBtn.dataset.originalLabel;
+            persistTableChatState();
+        });
+
+        function renderTableChatOutput() {
+            const provider = tableChatProviderSelect.value;
+            const chatState = getTableChatStateForCache(tableChatActiveCacheKey || tableCacheKey);
+            if (isLocalProvider(provider)) {
+                if (chatState.history && chatState.history.length) {
+                    tableChatResponse.classList.remove('empty-state', 'error');
+                    tableChatResponse.innerHTML = renderChatTranscript(chatState.history);
+                } else {
+                    tableChatResponse.classList.add('empty-state');
+                    tableChatResponse.textContent = '未开始对话，请输入问题并点击"分析"。';
+                }
+                tableChatQuotaInfo.textContent = '';
+            } else {
+                if (chatState.responseHTML) {
+                    tableChatResponse.classList.remove('empty-state', 'error');
+                    tableChatResponse.innerHTML = chatState.responseHTML;
+                } else {
+                    tableChatResponse.classList.add('empty-state');
+                    tableChatResponse.textContent = '准备就绪，请输入问题后点击"分析"。';
+                }
+                tableChatQuotaInfo.textContent = chatState.quotaText || '';
+            }
+            tableChatQuestion.value = chatState.draft || '';
+        }
+
+        function renderChatTranscript(history) {
+            const parts = history.map((entry) => {
+                const roleLabel = entry.role === 'user' ? '用户' : '智能体';
+                const content = renderAnswerHtml(entry.content || '');
+                const roleClass = entry.role === 'user' ? 'user' : 'assistant';
+                return `
+                    <div class="chat-message ${roleClass}">
+                        <div class="chat-role">${roleLabel}</div>
+                        <div class="chat-content">${content}</div>
+                    </div>
+                `;
+            });
+            return `<div class="chat-transcript">${parts.join('')}</div>`;
+        }
+
+        function persistTableChatState() {
+            const activeKey = tableChatActiveCacheKey || tableCacheKey;
+            if (!activeKey) {
+                return;
+            }
+            const chatState = getTableChatStateForCache(activeKey);
+            chatState.responseHTML = tableChatResponse.innerHTML;
+            chatState.quotaText = tableChatQuotaInfo.textContent;
+            chatState.draft = tableChatQuestion.value;
+            chatState.history = [...tableChatHistory];
+        }
+
+        const providerStatusBar = document.getElementById('provider-status-bar');
+        let statusIntervalId = null;
+
+        async function refreshProviderStatus() {
+            const statusItems = Array.from(providerStatusBar.querySelectorAll('.status-item'));
+            const updateStatus = (provider, state, message) => {
+                const item = statusItems.find((el) => el.dataset.provider === provider);
+                if (!item) return;
+                item.dataset.state = state;
+                item.title = message || '';
+            };
+
+            statusItems.forEach((item) => updateStatus(item.dataset.provider, 'checking', '检测中…'));
+
+            updateStatus('bailian', 'online', '云端模型');
+
+            try {
+                const resp = await fetch('/status/ollama');
+                const data = await resp.json();
+                if (resp.ok && data.success) {
+                    updateStatus('ollama', 'online', '本地 Ollama 正常');
+                } else {
+                    updateStatus('ollama', 'offline', data.error || '未检测到 Ollama 服务');
+                }
+            } catch (err) {
+                updateStatus('ollama', 'offline', String(err));
+            }
+
+            const tablegptBase = tableChatProviderSelect.dataset.tablegptBase || '';
+            if (!tablegptBase) {
+                updateStatus('tablegpt', 'warning', '未配置 TableGPT 地址');
+            } else {
+                try {
+                    const resp = await fetch(`/status/tablegpt?base_url=${encodeURIComponent(tablegptBase)}`);
+                    const data = await resp.json();
+                    if (resp.ok && data.success) {
+                        updateStatus('tablegpt', 'online', 'TableGPT 本地服务正常');
+                    } else {
+                        updateStatus('tablegpt', 'offline', data.error || '无法连接 TableGPT');
+                        console.warn('TableGPT 状态检测失败:', data.error);
+                    }
+                } catch (err) {
+                    updateStatus('tablegpt', 'offline', String(err));
+                    console.warn('TableGPT 状态请求异常:', err);
+                }
+            }
+        }
+
+        refreshProviderStatus();
+        statusIntervalId = setInterval(refreshProviderStatus, 10000);
+
+
+        reportEditor?.addEventListener('input', () => {
+            reportState.draft = reportEditor.value;
+            if (reportExportBtn) {
+                reportExportBtn.disabled = !reportEditor.value.trim();
+            }
+        });
+
+        openReportBtn?.addEventListener('click', async () => {
+            persistReportState();
+            if (!reportState.content && !reportGenerating) {
+                await generateReport();
+            }
+            applyReportStateToUI();
+            reportModal?.classList.remove('hidden');
+        });
+
+        closeReportBtn?.addEventListener('click', () => {
+            persistReportState();
+            reportModal?.classList.add('hidden');
+        });
+
+        reportModal?.addEventListener('click', (event) => {
+            if (event.target === reportModal || event.target.classList.contains('report-modal-backdrop')) {
+                persistReportState();
+                reportModal.classList.add('hidden');
+            }
+        });
+
+        reportExportBtn?.addEventListener('click', () => {
+            const content = (reportEditor?.value || reportState.content || '').trim();
+            if (!content) {
+                setReportMessage('无可导出的内容，请先生成报表。', 'error');
+                return;
+            }
+
+            const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            const ts = reportState.generatedAt ? reportState.generatedAt.replace(/[:T]/g, '-').split('.')[0] : 'report';
+            link.href = url;
+            link.download = `指标分析报表-${ts}.md`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        });
+
+        exportExcelBtn?.addEventListener('click', async () => {
+            if (!tableCacheKey) {
+                alert('请先上传并预览数据');
+                return;
+            }
+
+            const selectedColumns = Array.from(columnsSelect.selectedOptions).map((opt) => opt.value);
+            if (!selectedColumns.length) {
+                alert('请选择至少一个指标字段');
+                return;
+            }
+
+            const timestampColumn = timestampSelect.value || null;
+
+            try {
+                exportExcelBtn.disabled = true;
+                exportExcelBtn.textContent = '导出中...';
+
+                const response = await fetch('/report/export/excel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cache_key: tableCacheKey,
+                        columns: selectedColumns,
+                        timestamp_column: timestampColumn,
+                    }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Excel 导出失败');
+                }
+
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                const filename = response.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || '拜耳法分析报告.xlsx';
+                link.href = url;
+                link.download = decodeURIComponent(filename);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                alert(`Excel 导出失败: ${err.message}`);
+            } finally {
+                exportExcelBtn.disabled = false;
+                exportExcelBtn.textContent = '导出Excel';
+            }
+        });
+
+        function populateTableChatFocus(numericColumns) {
+            if (!tableChatFocusSelect) return;
+            tableChatFocusSelect.innerHTML = '';
+            numericColumns.forEach((column) => {
+                const option = document.createElement('option');
+                option.value = column;
+                option.textContent = column;
+                tableChatFocusSelect.appendChild(option);
+            });
+        }
+    </script>
+</body>
+</html>
+</html>

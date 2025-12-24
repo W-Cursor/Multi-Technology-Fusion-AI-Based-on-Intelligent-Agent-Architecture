@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>预测模型实验室</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="analysis-window">
+    <header class="analysis-header">
+        <div class="analysis-title">
+            <h1>预测模型实验室</h1>
+            <p>基于导入数据快速构建与验证预测模型</p>
+        </div>
+        <div class="analysis-controls">
+            <div class="analysis-time-range">
+                <label for="model-parameter">目标参数</label>
+                <select id="model-parameter"></select>
+            </div>
+            <button id="model-refresh" type="button">刷新数据</button>
+        </div>
+    </header>
+
+    <main class="analysis-main model-lab-main">
+        <section class="analysis-section">
+            <header>
+                <h2>上传数据并启用模型实验</h2>
+                <p>上传 CSV / Excel 文件，会自动缓存并提取数值字段，之后即可直接配置并训练模型。</p>
+            </header>
+            <div class="analysis-content">
+                <label class="file-upload">
+                    <span>选择文件</span>
+                    <input type="file" id="model-upload-file" accept=".csv,.xlsx">
+                </label>
+                <button id="model-upload-button" type="button" class="primary">上传数据并缓存</button>
+                <p id="model-upload-status" class="upload-status">尚未上传数据。</p>
+            </div>
+        </section>
+        <section class="analysis-section">
+            <header>
+                <h2>自定义预测模型</h2>
+                <p>选择输入/输出字段，训练模型并进行预测实验</p>
+            </header>
+            <div class="analysis-content">
+                <div id="model-panel" class="model-panel hidden">
+                    <section>
+                        <h3>模型训练</h3>
+                        <form id="model-train-form" class="model-form">
+                            <div class="model-options">
+                                <label>模型类型
+                                    <select id="model-type">
+                                        <option value="lstm">LSTM</option>
+                                        <option value="xgboost">XGBoost</option>
+                                        <option value="tabpfn">TabPFN</option>
+                                    </select>
+                                </label>
+                                <label class="lag-option">滞后处理 (Lag 1)
+                                    <select id="lag-columns" multiple size="4"></select>
+                                </label>
+                            </div>
+                            <div class="model-fields">
+                                <div>
+                                    <label>输入参数（可多选）</label>
+                                    <select id="model-train-inputs" multiple size="8"></select>
+                                </div>
+                                <div>
+                                    <label>输出参数</label>
+                                    <select id="model-train-target"></select>
+                                </div>
+                            </div>
+                            <div class="model-options" id="model-extra-options"></div>
+                            <button type="submit" class="primary">训练模型</button>
+                        </form>
+                        <div id="model-train-log" class="model-log">尚未训练模型。</div>
+                    </section>
+                    <section>
+                        <h3>模型预测</h3>
+                        <form id="model-predict-form" class="model-form hidden">
+                            <div id="model-predict-fields" class="model-predict-grid"></div>
+                            <button type="submit" class="ghost">执行预测</button>
+                        </form>
+                        <div id="model-predict-result" class="model-result">等待模型训练完成后进行预测。</div>
+                    </section>
+                </div>
+                <p id="model-panel-empty" class="empty-state">请先完成数据分析或加载缓存以启用预测模型功能。</p>
+            </div>
+        </section>
+
+        <section class="analysis-section">
+            <header>
+                <h2>训练结果概览</h2>
+                <p>查看模型训练日志与性能指标</p>
+            </header>
+            <div class="analysis-content">
+                <div id="model-summary" class="model-log">尚未训练模型。</div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const parameterSelect = document.getElementById('model-parameter');
+        const refreshButton = document.getElementById('model-refresh');
+        const modelPanel = document.getElementById('model-panel');
+        const modelPanelEmpty = document.getElementById('model-panel-empty');
+        const modelTrainForm = document.getElementById('model-train-form');
+        const modelTrainLog = document.getElementById('model-train-log');
+        const modelPredictForm = document.getElementById('model-predict-form');
+        const modelPredictFields = document.getElementById('model-predict-fields');
+        const modelPredictResult = document.getElementById('model-predict-result');
+        const modelTypeSelect = document.getElementById('model-type');
+        const lagColumnsSelect = document.getElementById('lag-columns');
+        const modelExtraOptions = document.getElementById('model-extra-options');
+        const modelSummary = document.getElementById('model-summary');
+        const uploadFileInput = document.getElementById('model-upload-file');
+        const uploadButton = document.getElementById('model-upload-button');
+        const uploadStatus = document.getElementById('model-upload-status');
+
+        let modelState = {
+            cacheKey: '',
+            availableParameters: [],
+            currentModelId: '',
+            currentModelType: 'lstm',
+        };
+
+        function getQueryParam(name) {
+            const params = new URLSearchParams(window.location.search);
+            return params.get(name) || '';
+        }
+
+        function initialiseFromQuery() {
+            const cacheKey = getQueryParam('cache_key');
+            if (cacheKey) {
+                modelState.cacheKey = cacheKey;
+            }
+        }
+
+        function setModelPanelState(enable) {
+            if (!modelPanel || !modelPanelEmpty || !modelPredictForm || !modelTrainLog || !modelPredictResult) return;
+            if (enable) {
+                modelPanel.classList.remove('hidden');
+                modelPanelEmpty.classList.add('hidden');
+                populateModelSelectors();
+            } else {
+                modelPanel.classList.add('hidden');
+                modelPanelEmpty.classList.remove('hidden');
+                modelPredictForm.classList.add('hidden');
+                modelTrainLog.textContent = '尚未训练模型。';
+                modelPredictResult.textContent = '等待模型训练完成后进行预测。';
+                modelSummary.textContent = '尚未训练模型。';
+                modelState.currentModelId = '';
+            }
+        }
+
+        function populateModelSelectors() {
+            const inputSelect = document.getElementById('model-train-inputs');
+            const targetSelect = document.getElementById('model-train-target');
+            if (!inputSelect || !targetSelect) return;
+
+            if (!modelState.availableParameters.length) {
+                inputSelect.innerHTML = '';
+                targetSelect.innerHTML = '';
+                if (lagColumnsSelect) lagColumnsSelect.innerHTML = '';
+                return;
+            }
+
+            const optionsHtml = modelState.availableParameters
+                .map((column) => `<option value="${column}">${column}</option>`)
+                .join('');
+
+            inputSelect.innerHTML = optionsHtml;
+            targetSelect.innerHTML = optionsHtml;
+            if (lagColumnsSelect) lagColumnsSelect.innerHTML = optionsHtml;
+        }
+
+        function applyMetadata(metadata, sourceDescription) {
+            const parameters = Array.isArray(metadata.numeric_columns)
+                ? metadata.numeric_columns
+                : [];
+            modelState.availableParameters = parameters;
+            updateParameterSelect(parameters);
+            populateModelSelectors();
+            setModelPanelState(parameters.length > 0);
+            if (uploadStatus) {
+                uploadStatus.textContent = sourceDescription || '数据加载成功。';
+            }
+        }
+
+        function renderModelExtraOptions(modelType) {
+            if (!modelExtraOptions) return;
+            if (modelType === 'lstm') {
+                modelExtraOptions.innerHTML = `
+                    <label>训练轮数
+                        <input type="number" id="model-epochs" value="60" min="10" max="500">
+                    </label>
+                    <label>序列长度
+                        <input type="number" id="model-seq-len" value="1" min="1" max="10">
+                    </label>
+                    <label>学习率
+                        <input type="number" id="model-learning-rate" value="0.001" step="0.0001" min="0.0001">
+                    </label>
+                `;
+            } else if (modelType === 'xgboost') {
+                modelExtraOptions.innerHTML = `
+                    <label>树数量 (n_estimators)
+                        <input type="number" id="model-n-estimators" value="300" min="50">
+                    </label>
+                    <label>最大深度 (max_depth)
+                        <input type="number" id="model-max-depth" value="6" min="1">
+                    </label>
+                    <label>学习率 (learning_rate)
+                        <input type="number" id="model-xgb-learning-rate" value="0.05" step="0.01" min="0.001">
+                    </label>
+                `;
+            } else if (modelType === 'tabpfn') {
+                modelExtraOptions.innerHTML = `
+                    <label>集成数量 (ensemble)
+                        <input type="number" id="model-ensemble" value="32" min="4" max="64">
+                    </label>
+                    <label>设备 (device)
+                        <select id="model-device">
+                            <option value="cpu">CPU</option>
+                            <option value="cuda">CUDA</option>
+                        </select>
+                    </label>
+                `;
+            } else {
+                modelExtraOptions.innerHTML = '';
+            }
+        }
+
+        function updateParameterSelect(parameters) {
+            parameterSelect.innerHTML = '';
+            if (!parameters.length) {
+                parameterSelect.innerHTML = '<option value="" disabled selected>暂无可选参数</option>';
+                return;
+            }
+            parameters.forEach((param, index) => {
+                const option = document.createElement('option');
+                option.value = param;
+                option.textContent = param;
+                if (index === 0) {
+                    option.selected = true;
+                }
+                parameterSelect.appendChild(option);
+            });
+        }
+
+        async function loadParametersFromCache() {
+            if (!modelState.cacheKey) {
+                setModelPanelState(false);
+                return;
+            }
+            try {
+                const resp = await fetch(`/model-lab/parameters?cache_key=${encodeURIComponent(modelState.cacheKey)}`);
+                if (!resp.ok) {
+                    throw new Error('无法获取参数列表');
+                }
+                const data = await resp.json();
+                applyMetadata(data, `缓存已加载，共 ${Array.isArray(data.parameters) ? data.parameters.length : '0'} 个数值字段。`);
+            } catch (err) {
+                console.error('加载参数列表失败:', err);
+                if (uploadStatus) {
+                    uploadStatus.textContent = '无法加载缓存参数，请重新上传。';
+                }
+                setModelPanelState(false);
+            }
+        }
+
+        async function uploadModelLabDataset() {
+            if (!uploadFileInput?.files.length) {
+                if (uploadStatus) {
+                    uploadStatus.textContent = '请先选择一个文件。';
+                }
+                return;
+            }
+            const formData = new FormData();
+            formData.append('file', uploadFileInput.files[0]);
+            if (uploadStatus) {
+                uploadStatus.textContent = '上传中...';
+            }
+            try {
+                const resp = await fetch('/model-lab/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    throw new Error(data.detail || data.error || '上传失败。');
+                }
+                if (!data.cache_key) {
+                    throw new Error('未返回缓存键，请稍后再试。');
+                }
+                modelState.cacheKey = data.cache_key;
+                applyMetadata(data, `数据缓存成功，共 ${Array.isArray(data.numeric_columns) ? data.numeric_columns.length : '0'} 个数值字段。`);
+            } catch (err) {
+                console.error('数据上传失败:', err);
+                if (uploadStatus) {
+                    uploadStatus.textContent = `上传失败：${err.message}`;
+                }
+                setModelPanelState(false);
+            }
+        }
+
+        initialiseFromQuery();
+        if (modelState.cacheKey) {
+            loadParametersFromCache();
+        }
+
+        refreshButton.addEventListener('click', () => {
+            loadParametersFromCache();
+        });
+
+        if (uploadButton) {
+            uploadButton.addEventListener('click', uploadModelLabDataset);
+        }
+
+        if (modelTypeSelect) {
+            modelState.currentModelType = modelTypeSelect.value;
+            modelTypeSelect.addEventListener('change', () => {
+                modelState.currentModelType = modelTypeSelect.value;
+                renderModelExtraOptions(modelState.currentModelType);
+            });
+            renderModelExtraOptions(modelTypeSelect.value);
+        }
+
+        if (modelTrainForm) {
+            modelTrainForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                if (!modelState.cacheKey) {
+                    modelTrainLog.textContent = '请先加载数据缓存。';
+                    return;
+                }
+
+                const inputSelect = document.getElementById('model-train-inputs');
+                const targetSelect = document.getElementById('model-train-target');
+                if (!inputSelect || !targetSelect) {
+                    modelTrainLog.textContent = '缺少输入选择控件。';
+                    return;
+                }
+
+                const selectedInputs = Array.from(inputSelect.selectedOptions).map((opt) => opt.value);
+                const target = targetSelect.value;
+                const selectedLagCols = lagColumnsSelect
+                    ? Array.from(lagColumnsSelect.selectedOptions).map((opt) => opt.value)
+                    : [];
+                const modelType = modelTypeSelect ? modelTypeSelect.value : 'lstm';
+
+                if (!selectedInputs.length || !target) {
+                    modelTrainLog.textContent = '请至少选择一个输入字段和一个输出字段。';
+                    return;
+                }
+
+                modelState.currentModelType = modelType;
+
+                const payload = {
+                    cache_key: modelState.cacheKey,
+                    model_type: modelType,
+                    input_columns: selectedInputs,
+                    target_column: target,
+                    lag_columns: selectedLagCols,
+                };
+
+                if (modelType === 'lstm') {
+                    payload.epochs = Number(document.getElementById('model-epochs').value || 60);
+                    payload.sequence_length = Number(document.getElementById('model-seq-len').value || 1);
+                    payload.learning_rate = Number(document.getElementById('model-learning-rate').value || 0.001);
+                } else if (modelType === 'xgboost') {
+                    payload.n_estimators = Number(document.getElementById('model-n-estimators').value || 300);
+                    payload.max_depth = Number(document.getElementById('model-max-depth').value || 6);
+                    payload.learning_rate = Number(document.getElementById('model-xgb-learning-rate').value || 0.05);
+                } else if (modelType === 'tabpfn') {
+                    payload.ensemble = Number(document.getElementById('model-ensemble').value || 32);
+                    payload.device = document.getElementById('model-device').value || 'cpu';
+                }
+
+                modelTrainLog.textContent = '模型训练中...';
+                try {
+                    const response = await fetch('/model/train', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+                    const data = await response.json();
+                    if (!response.ok || !data.success) {
+                        modelTrainLog.textContent = data.detail || data.error || '模型训练失败。';
+                        modelPredictForm.classList.add('hidden');
+                        return;
+                    }
+
+                    modelState.currentModelId = data.model_id;
+                    const metrics = data.metrics || {};
+                    const summaryHtml = `
+                        <p>模型类型：${(data.model_type || '').toUpperCase()}</p>
+                        <p>训练 MSE: ${metrics.train_mse?.toFixed(4) ?? '--'}，MAE: ${metrics.train_mae?.toFixed(4) ?? '--'}，R²: ${metrics.train_r2?.toFixed(4) ?? '--'}</p>
+                        <p>验证 MSE: ${metrics.val_mse?.toFixed(4) ?? '--'}，MAE: ${metrics.val_mae?.toFixed(4) ?? '--'}，R²: ${metrics.val_r2?.toFixed(4) ?? '--'}</p>
+                        <p>样本数: ${metrics.samples ?? '--'}</p>
+                    `;
+                    modelTrainLog.innerHTML = summaryHtml;
+                    modelSummary.innerHTML = summaryHtml;
+
+                    modelPredictFields.innerHTML = (data.input_columns || selectedInputs)
+                        .map((input) => `
+                            <label>
+                                <span>${input}</span>
+                                <input type="number" data-input-field="${input}" required>
+                            </label>
+                        `)
+                        .join('');
+                    modelPredictForm.classList.remove('hidden');
+                    modelPredictResult.textContent = '请输入参数后执行预测。';
+                } catch (err) {
+                    modelTrainLog.textContent = `模型训练时出现错误：${err}`;
+                    modelPredictForm.classList.add('hidden');
+                }
+            });
+        }
+
+        if (modelPredictForm) {
+            modelPredictForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                if (!modelState.currentModelId) {
+                    modelPredictResult.textContent = '请先训练模型。';
+                    return;
+                }
+
+                const inputValues = Array.from(modelPredictFields.querySelectorAll('input[data-input-field]')).map((input) => Number(input.value));
+                if (inputValues.some((value) => Number.isNaN(value))) {
+                    modelPredictResult.textContent = '请检查输入参数是否填写完整。';
+                    return;
+                }
+
+                modelPredictResult.textContent = '预测中...';
+                try {
+                    const response = await fetch('/model/predict', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            model_id: modelState.currentModelId,
+                            model_type: modelState.currentModelType,
+                            inputs: inputValues,
+                        }),
+                    });
+                    const data = await response.json();
+                    if (!response.ok || !data.success) {
+                        modelPredictResult.textContent = data.detail || data.error || '预测失败。';
+                        return;
+                    }
+
+                    const prediction = data.prediction;
+                    modelPredictResult.textContent = `预测结果: ${prediction.toFixed(4)}`;
+                } catch (err) {
+                    modelPredictResult.textContent = `预测时出现错误：${err}`;
+                }
+            });
+        }
+    </script>
+</body>
+</html>

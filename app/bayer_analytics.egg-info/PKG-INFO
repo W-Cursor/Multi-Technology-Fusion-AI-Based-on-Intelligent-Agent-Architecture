@@ -1,0 +1,28 @@
+Metadata-Version: 2.4
+Name: bayer-analytics
+Version: 0.1.0
+Summary: Offline analysis framework for Bayer process alumina production
+Author-email: GD <user@example.com>
+Requires-Python: >=3.10
+Requires-Dist: fastapi>=0.110
+Requires-Dist: uvicorn[standard]>=0.23
+Requires-Dist: pandas>=2.2
+Requires-Dist: numpy>=1.26,<2.0
+Requires-Dist: scikit-learn>=1.4
+Requires-Dist: xgboost>=1.7.6,<2.0
+Requires-Dist: shap>=0.43,<0.44
+Requires-Dist: statsmodels>=0.14
+Requires-Dist: jinja2>=3.1
+Requires-Dist: python-multipart>=0.0.9
+Requires-Dist: openpyxl>=3.1
+Requires-Dist: requests>=2.31
+Requires-Dist: tablegpt-agent>=0.1.2
+Requires-Dist: python-dotenv>=1.0
+Requires-Dist: torch>=2.2.0
+Provides-Extra: tabular
+Requires-Dist: tabpfn>=0.1.8; extra == "tabular"
+Provides-Extra: ai
+Requires-Dist: dashscope>=1.14.0; extra == "ai"
+Provides-Extra: dev
+Requires-Dist: black>=24.4; extra == "dev"
+Requires-Dist: ruff>=0.5; extra == "dev"

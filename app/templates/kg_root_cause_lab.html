@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>知识图谱根因实验室</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="analysis-window">
+    <header class="analysis-header">
+        <div class="analysis-title">
+            <h1>知识图谱根因实验室</h1>
+            <p>在隔离环境中调试图谱归因流程，验证成功后再接入主系统</p>
+        </div>
+        <div class="analysis-controls">
+            <form id="kg-upload-form" class="kg-upload-form" enctype="multipart/form-data">
+                <label class="file-label" for="kg-file-input">上传历史数据</label>
+                <input id="kg-file-input" name="file" type="file" accept=".csv,.xls,.xlsx" required>
+                <button type="submit" class="primary">预览</button>
+            </form>
+        </div>
+    </header>
+
+    <main class="analysis-main kg-root-cause-main">
+        <section class="analysis-section">
+            <header>
+                <h2>数据上下文</h2>
+                <p>上传数据后可选择目标字段、时间字段与图谱节点</p>
+            </header>
+            <div class="analysis-content kg-context-grid">
+                <div>
+                    <label>缓存键
+                        <input id="kg-cache-key" type="text" readonly placeholder="等待上传">
+                    </label>
+                </div>
+                <div>
+                    <label>时间字段
+                        <select id="kg-timestamp" disabled></select>
+                    </label>
+                </div>
+                <div>
+                    <label>目标数据字段
+                        <select id="kg-target-column" disabled></select>
+                    </label>
+                </div>
+                <div>
+                    <label>匹配图谱节点
+                        <select id="kg-target-node" disabled></select>
+                    </label>
+                </div>
+                <div>
+                    <label>回溯窗口（小时）
+                        <select id="kg-lookback" disabled>
+                            <option value="168">7 天</option>
+                            <option value="72">3 天</option>
+                            <option value="48">2 天</option>
+                            <option value="24">1 天</option>
+                            <option value="720">30 天</option>
+                        </select>
+                    </label>
+                </div>
+                <div>
+                    <label>数据清洗策略
+                        <select id="kg-cleaning-strategy" disabled>
+                            <option value="drop_row">丢弃整行（默认）</option>
+                            <option value="neighbor_fill">邻近填充</option>
+                            <option value="retain_row">保留行（均值兜底）</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
+            <footer class="analysis-actions">
+                <button id="kg-run-analysis" type="button" class="primary" disabled>执行归因分析</button>
+                <span id="kg-status" class="kg-status-text">请先上传数据</span>
+            </footer>
+        </section>
+
+        <section class="analysis-section">
+            <header>
+                <h2>归因结果</h2>
+                <div id="kg-summary" class="kg-summary-block empty-state">等待分析...</div>
+            </header>
+            <div class="analysis-content kg-result-layout">
+                <aside class="kg-result-card">
+                    <h3>目标指标最近趋势</h3>
+                    <div id="kg-trend" class="kg-trend-list empty-state">暂无数据</div>
+                </aside>
+                <div class="kg-result-card">
+                    <h3>可能的根因</h3>
+                    <div id="kg-model-summary" class="kg-model-summary">模型增强信息待生成。</div>
+                    <div id="kg-root-causes" class="kg-factor-list empty-state">等待分析...</div>
+                </div>
+                <div class="kg-result-card">
+                    <h3>可能的影响链路</h3>
+                    <div id="kg-impacts" class="kg-factor-list empty-state">等待分析...</div>
+                </div>
+                <div class="kg-result-card">
+                    <h3>诊断信息</h3>
+                    <div id="kg-diagnostics" class="kg-diagnostics">--</div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const uploadForm = document.getElementById('kg-upload-form');
+        const fileInput = document.getElementById('kg-file-input');
+        const cacheKeyInput = document.getElementById('kg-cache-key');
+        const timestampSelect = document.getElementById('kg-timestamp');
+        const targetColumnSelect = document.getElementById('kg-target-column');
+        const targetNodeSelect = document.getElementById('kg-target-node');
+        const lookbackSelect = document.getElementById('kg-lookback');
+        const cleanStrategySelect = document.getElementById('kg-cleaning-strategy');
+        const runBtn = document.getElementById('kg-run-analysis');
+        const statusSpan = document.getElementById('kg-status');
+        const summaryBox = document.getElementById('kg-summary');
+        const trendDiv = document.getElementById('kg-trend');
+        const rootDiv = document.getElementById('kg-root-causes');
+        const modelSummaryDiv = document.getElementById('kg-model-summary');
+        const impactDiv = document.getElementById('kg-impacts');
+        const diagnosticDiv = document.getElementById('kg-diagnostics');
+
+        let cacheKey = '';
+        let previewPayload = null;
+        let graphNodes = [];
+
+        function rebuildNodeOptions(columns) {
+            graphNodes = Array.from(new Set(columns || [])).map((name) => ({ id: name, label: name }));
+            targetNodeSelect.innerHTML = '';
+            targetNodeSelect.appendChild(new Option('-- 请选择图谱节点 --', ''));
+            graphNodes.forEach((node) => {
+                targetNodeSelect.appendChild(new Option(node.label, node.id));
+            });
+            targetNodeSelect.disabled = graphNodes.length === 0;
+        }
+
+        uploadForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!fileInput.files.length) {
+                statusSpan.textContent = '请先选择文件';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            disableControls(true, '正在上传并预览...');
+
+            try {
+                const resp = await fetch('/preview', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!resp.ok) {
+                    const detail = await resp.json().catch(() => ({}));
+                    throw new Error(detail.detail || '预览失败');
+                }
+
+                previewPayload = await resp.json();
+                cacheKey = previewPayload.cache_key || '';
+                cacheKeyInput.value = cacheKey;
+                populateSelectors(previewPayload);
+                statusSpan.textContent = '数据加载完成，请选择目标字段并执行分析';
+                runBtn.disabled = false;
+            } catch (err) {
+                console.error(err);
+                statusSpan.textContent = `预览失败：${err.message}`;
+            } finally {
+                disableControls(false);
+            }
+        });
+
+        (async function bootstrapFromQuery() {
+            const params = new URLSearchParams(window.location.search);
+            const queryCacheKey = params.get('cache_key');
+            if (!queryCacheKey) {
+                return;
+            }
+
+            cacheKey = queryCacheKey;
+            cacheKeyInput.value = cacheKey;
+            statusSpan.textContent = '正在读取缓存数据...';
+
+            disableControls(true, '正在读取缓存数据...');
+            fileInput.disabled = true;
+            uploadForm.querySelector('button[type="submit"]').disabled = true;
+
+            try {
+                const resp = await fetch(`/kg/dataset-metadata?cache_key=${encodeURIComponent(cacheKey)}`);
+                if (!resp.ok) {
+                    const detail = await resp.json().catch(() => ({}));
+                    throw new Error(detail.detail || '无法读取缓存数据');
+                }
+
+                previewPayload = await resp.json();
+                populateSelectors(previewPayload);
+
+                const timestampParam = params.get('timestamp');
+                if (timestampParam && Array.from(timestampSelect.options).some((opt) => opt.value === timestampParam)) {
+                    timestampSelect.value = timestampParam;
+                }
+
+                const targetParam = params.get('target');
+                if (targetParam && Array.from(targetColumnSelect.options).some((opt) => opt.value === targetParam)) {
+                    targetColumnSelect.value = targetParam;
+                    autoMatchNode();
+                }
+
+                const lookbackParam = params.get('lookback');
+                if (lookbackParam && Array.from(lookbackSelect.options).some((opt) => opt.value === lookbackParam)) {
+                    lookbackSelect.value = lookbackParam;
+                }
+
+                const cleaningParam = params.get('cleaning');
+                if (cleaningParam && Array.from(cleanStrategySelect.options).some((opt) => opt.value === cleaningParam)) {
+                    cleanStrategySelect.value = cleaningParam;
+                }
+
+                statusSpan.textContent = '已加载缓存数据，可直接执行分析';
+                runBtn.disabled = false;
+
+                if (params.get('autorun') === '1' && targetColumnSelect.value) {
+                    runBtn.click();
+                }
+            } catch (err) {
+                console.error(err);
+                statusSpan.textContent = `缓存加载失败：${err.message}`;
+                fileInput.disabled = false;
+                uploadForm.querySelector('button[type="submit"]').disabled = false;
+                cacheKey = '';
+                cacheKeyInput.value = '';
+            } finally {
+                disableControls(false);
+            }
+        })();
+
+        function populateSelectors(payload) {
+            const { timestamp_candidates = [], numeric_columns = [], columns = [] } = payload;
+
+            fillOptions(timestampSelect, timestamp_candidates, true);
+            const columnOptions = numeric_columns.length ? numeric_columns : columns;
+            fillOptions(targetColumnSelect, columnOptions, true);
+            rebuildNodeOptions(columnOptions);
+
+            lookbackSelect.disabled = false;
+            cleanStrategySelect.disabled = false;
+
+            autoMatchNode();
+        }
+
+        function fillOptions(selectEl, items, includePlaceholder = false) {
+            selectEl.innerHTML = '';
+            if (includePlaceholder) {
+                selectEl.appendChild(new Option('-- 请选择 --', ''));
+            }
+            items.forEach((item) => {
+                selectEl.appendChild(new Option(item, item));
+            });
+            selectEl.disabled = false;
+        }
+
+        targetColumnSelect.addEventListener('change', autoMatchNode);
+
+        function autoMatchNode() {
+            const column = targetColumnSelect.value;
+            if (!column) {
+                targetNodeSelect.value = '';
+                return;
+            }
+
+            const exists = graphNodes.some((node) => node.id === column);
+            if (!exists) {
+                graphNodes.push({ id: column, label: column });
+                rebuildNodeOptions(graphNodes.map((node) => node.id));
+            }
+            targetNodeSelect.value = column;
+        }
+
+        runBtn.addEventListener('click', async () => {
+            if (!cacheKey) {
+                statusSpan.textContent = '请先上传并预览数据';
+                return;
+            }
+
+            const targetColumn = targetColumnSelect.value;
+            const targetNode = targetNodeSelect.value || targetColumn;
+
+            if (!targetColumn) {
+                statusSpan.textContent = '请选择目标数据字段';
+                return;
+            }
+
+            disableControls(true, '正在执行归因分析...');
+
+            try {
+                const payload = {
+                    cache_key: cacheKey,
+                    target_column: targetColumn,
+                    target_node: targetNode,
+                    timestamp_column: timestampSelect.value || null,
+                    anomaly_type: 'unknown',
+                    lookback_window_hours: Number(lookbackSelect.value) || null,
+                    cleaning_strategy: cleanStrategySelect.value || 'drop_row',
+                };
+
+                const resp = await fetch('/kg-root-cause/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+
+                if (!resp.ok) {
+                    const detail = await resp.json().catch(() => ({}));
+                    throw new Error(detail.detail || '分析失败');
+                }
+
+                const result = await resp.json();
+                renderResult(result);
+                statusSpan.textContent = '分析完成';
+            } catch (err) {
+                console.error(err);
+                statusSpan.textContent = `分析失败：${err.message}`;
+            } finally {
+                disableControls(false);
+            }
+        });
+
+        function renderResult(result) {
+            renderSummary(result);
+            renderTrend(result.trend || []);
+            renderModelSummary(result.model_summary || {});
+            renderFactors(result.root_causes || [], rootDiv, '尚未识别根因');
+            renderFactors(result.impacts || [], impactDiv, '尚未识别影响参数');
+            renderDiagnostics(result.diagnostics || {});
+        }
+
+        function renderSummary(result) {
+            const summaryText = (result.summary || '').trim();
+            const rootCauses = Array.isArray(result.root_causes) ? result.root_causes : [];
+            const temporalInsights = Array.isArray(result.temporal_insights) ? result.temporal_insights : [];
+
+            if (!summaryText && !rootCauses.length) {
+                summaryBox.className = 'kg-summary-block empty-state';
+                summaryBox.textContent = '暂无总结';
+                return;
+            }
+
+            summaryBox.className = 'kg-summary-block';
+            summaryBox.innerHTML = '';
+
+            const lines = summaryText.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+            const targetLine = lines.find((line) => !line.includes('建议'))
+                || summaryText
+                || `${result.target_label || '目标指标'} 暂无偏差描述`;
+            const suggestionLine = lines.find((line) => line.includes('建议')) || '';
+
+            const topFactors = rootCauses.slice(0, 3);
+            const actionableFactors = rootCauses
+                .filter((factor) => factor.adjustment && factor.recommendation)
+                .slice(0, 4);
+
+            summaryBox.appendChild(buildSummaryItem('目标偏差', [targetLine]));
+
+            if (topFactors.length) {
+                const driverLines = topFactors.map((factor) => {
+                    const corr = formatNumber(factor.correlation, 2);
+                    const shap = formatNumber(factor.shap_value, 2);
+                    const delta = formatNumber(factor.delta_value, 2);
+                    return `${factor.label}：相关系数 ${corr}，SHAP ${shap}，偏离 ${delta}`;
+                });
+                summaryBox.appendChild(buildSummaryItem('核心驱动', driverLines));
+            }
+
+            const actionLines = actionableFactors.length
+                ? actionableFactors.map((factor) => `${factor.label}（${factor.adjustment}）：${factor.recommendation}`)
+                : suggestionLine
+                    ? [suggestionLine]
+                    : topFactors.map((factor) => `${factor.label}：建议 ${factor.adjustment || '保持观察'}`);
+
+            if (actionLines.length) {
+                summaryBox.appendChild(buildSummaryItem('优先措施', actionLines, { ordered: true }));
+            }
+
+            if (temporalInsights.length) {
+                const temporalLines = temporalInsights.slice(0, 3).map((item) => {
+                    if (item.summary) {
+                        return item.summary;
+                    }
+                    const hours = formatNumber(item.lead_hours, 2);
+                    const corr = formatNumber(item.correlation, 2);
+                    const pValue = formatNumber(item.granger_p_value, 3);
+                    return `${item.parameter} 提前约 ${hours} 小时影响目标（相关 ${corr}，Granger p=${pValue}）`;
+                });
+                summaryBox.appendChild(buildSummaryItem('时序洞察', temporalLines));
+            }
+
+            if (result.model_summary?.shap_reason && !result.model_summary.shap) {
+                summaryBox.appendChild(buildSummaryItem('模型提示', [result.model_summary.shap_reason]));
+            }
+        }
+
+        function buildSummaryItem(title, lines, options = {}) {
+            const { ordered = false } = options;
+            const section = document.createElement('div');
+            section.className = 'kg-summary-item';
+
+            const heading = document.createElement('h3');
+            heading.textContent = title;
+            section.appendChild(heading);
+
+            const cleanedLines = (lines || []).map((line) => line.trim()).filter(Boolean);
+
+            if (!cleanedLines.length) {
+                const placeholder = document.createElement('p');
+                placeholder.textContent = '--';
+                section.appendChild(placeholder);
+                return section;
+            }
+
+            if (cleanedLines.length === 1 && !ordered) {
+                const paragraph = document.createElement('p');
+                paragraph.textContent = cleanedLines[0];
+                section.appendChild(paragraph);
+                return section;
+            }
+
+            const list = document.createElement(ordered ? 'ol' : 'ul');
+            cleanedLines.forEach((line) => {
+                const item = document.createElement('li');
+                item.textContent = line;
+                list.appendChild(item);
+            });
+            section.appendChild(list);
+            return section;
+        }
+
+        function renderTrend(points) {
+            if (!points.length) {
+                trendDiv.className = 'kg-trend-list empty-state';
+                trendDiv.textContent = '缺少时间序列数据';
+                return;
+            }
+
+            trendDiv.className = 'kg-trend-list';
+            trendDiv.innerHTML = '';
+
+            const list = document.createElement('ul');
+            points.slice(-20).forEach((point) => {
+                const li = document.createElement('li');
+                li.innerHTML = `<span>${point.timestamp}</span><strong>${formatNumber(point.value)}</strong>`;
+                list.appendChild(li);
+            });
+            trendDiv.appendChild(list);
+        }
+
+        function renderModelSummary(summary) {
+            if (!summary || !summary.enabled) {
+                modelSummaryDiv.textContent = summary?.reason || '模型增强未启用，使用统计结果。';
+                modelSummaryDiv.className = 'kg-model-summary disabled';
+                return;
+            }
+
+            modelSummaryDiv.className = 'kg-model-summary';
+            const shapSource = summary.shap_source || (summary.shap ? 'shap' : 'unavailable');
+            const shapText = summary.shap
+                ? `已启用${summary.shap_reason ? `（${summary.shap_reason}）` : ''}`
+                : `未启用${summary.shap_reason ? `（${summary.shap_reason}）` : ''}`;
+            const noteLines = [];
+            if (shapSource === 'pred_contribs') {
+                noteLines.push('已使用 XGBoost pred_contribs 贡献值替代 SHAP。');
+            } else if (!summary.shap && summary.shap_reason && shapSource === 'unavailable') {
+                noteLines.push(summary.shap_reason);
+            }
+            const cleaningMeta = summary.cleaning;
+            if (cleaningMeta && cleaningMeta.strategy) {
+                const dropped = cleaningMeta.rows_dropped ?? 0;
+                const filled = cleaningMeta.filled_cells ?? 0;
+                noteLines.push(`建模阶段清洗：${cleaningMeta.strategy}，丢弃 ${dropped} 行，填补 ${filled} 个单元格`);
+            }
+
+            modelSummaryDiv.innerHTML = `
+                <h4>模型评分</h4>
+                <ul>
+                    <li>模型：${summary.model || '--'}</li>
+                    <li>样本量：${summary.samples ?? '--'}</li>
+                    <li>R²：${formatNumber(summary.r2, 3)}</li>
+                    <li>MAE：${formatNumber(summary.mae, 3)}</li>
+                    <li>SHAP：${shapText}</li>
+                </ul>
+                ${noteLines.length ? `<p class="kg-hint">${noteLines.join('；')}</p>` : ''}
+            `;
+        }
+
+        function renderFactors(factors, container, emptyText) {
+            if (!factors.length) {
+                container.className = 'kg-factor-list empty-state';
+                container.textContent = emptyText;
+                return;
+            }
+
+            container.className = 'kg-factor-list';
+            container.innerHTML = '';
+
+            const table = document.createElement('table');
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th>参数</th>
+                        <th>匹配字段</th>
+                        <th>关系</th>
+                        <th>相关系数</th>
+                        <th>回归系数</th>
+                        <th>SHAP值</th>
+                        <th>模型重要度</th>
+                        <th>滞后(组)</th>
+                        <th>滞后相关</th>
+                        <th>Granger p</th>
+                        <th>综合评分</th>
+                        <th>最新值</th>
+                        <th>偏离</th>
+                        <th>调节方向</th>
+                        <th>调节建议</th>
+                    </tr>
+                </thead>
+            `;
+
+            const tbody = document.createElement('tbody');
+            factors.forEach((factor) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${factor.label}</td>
+                    <td>${factor.matched_column || '<span class="hint">未匹配</span>'}</td>
+                    <td>${factor.relationship || '--'}</td>
+                    <td>${formatNumber(factor.correlation, 2)}</td>
+                    <td>${formatNumber(factor.regression_coef, 2)}</td>
+                    <td>${formatNumber(factor.shap_value, 2)}</td>
+                    <td>${formatNumber(factor.model_importance, 3)}</td>
+                    <td>${formatNumber(factor.lead_lag_hours, 2)}</td>
+                    <td>${formatNumber(factor.lead_lag_correlation, 2)}</td>
+                    <td>${formatNumber(factor.granger_p_value, 3)}</td>
+                    <td>${formatNumber(factor.influence_score, 2)}</td>
+                    <td>${formatNumber(factor.latest_value, 2)}</td>
+                    <td>${formatNumber(factor.delta_value, 2)}</td>
+                    <td>${factor.adjustment || '--'}</td>
+                    <td>${factor.recommendation || '---'}</td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            table.appendChild(tbody);
+            container.appendChild(table);
+        }
+
+        function renderDiagnostics(diag) {
+            const {
+                method,
+                processed_columns: processed = [],
+                cleaning: globalCleaning = null,
+                model_cleaning: modelCleaning = null,
+            } = diag;
+            const temporalDiag = diag.temporal || null;
+            const parts = [];
+
+            if (method) {
+                parts.push(`分析方法：${method}`);
+            }
+
+            if (processed.length) {
+                parts.push(`已处理字段：${processed.join('、')}`);
+            }
+
+            if (temporalDiag) {
+                if (temporalDiag.enabled && Array.isArray(temporalDiag.top) && temporalDiag.top.length) {
+                    parts.push(`时序洞察：${temporalDiag.top[0]}`);
+                } else if (temporalDiag.reason) {
+                    parts.push(`时序分析：${temporalDiag.reason}`);
+                } else if (temporalDiag.statsmodels && temporalDiag.statsmodels !== 'available') {
+                    parts.push(`时序分析：${temporalDiag.statsmodels}`);
+                }
+            }
+
+            const summaryText = parts.length ? parts.join('；') : '暂无异常诊断信息';
+            diagnosticDiv.className = 'kg-diagnostics';
+            diagnosticDiv.innerHTML = '';
+
+            const summaryParagraph = document.createElement('p');
+            summaryParagraph.textContent = summaryText;
+            diagnosticDiv.appendChild(summaryParagraph);
+
+            const detailEntries = [];
+            if (globalCleaning) {
+                detailEntries.push({ title: '数据清洗（全局）', meta: globalCleaning });
+            }
+            if (modelCleaning) {
+                detailEntries.push({ title: '数据清洗（建模阶段）', meta: modelCleaning });
+            }
+
+            detailEntries.forEach(({ title, meta }) => {
+                const columns = Array.isArray(meta.columns_flagged) && meta.columns_flagged.length
+                    ? meta.columns_flagged.join('、')
+                    : '无';
+                const detailsEl = document.createElement('details');
+                detailsEl.className = 'kg-cleaning-details';
+
+                const summary = document.createElement('summary');
+                summary.textContent = `${title}（策略：${meta.strategy || '--'}）`;
+                detailsEl.appendChild(summary);
+
+                const list = document.createElement('ul');
+                list.innerHTML = `
+                    <li>原始行数：${meta.rows_before ?? '--'}</li>
+                    <li>保留行数：${meta.rows_after ?? '--'}</li>
+                    <li>丢弃行数：${meta.rows_dropped ?? 0}</li>
+                    <li>标记单元格：${meta.cells_flagged ?? 0}</li>
+                    <li>填补单元格：${meta.filled_cells ?? 0}</li>
+                    <li>残留缺失：${meta.remaining_nan ?? 0}</li>
+                    <li>触发字段：${columns}</li>
+                `;
+                detailsEl.appendChild(list);
+
+                diagnosticDiv.appendChild(detailsEl);
+            });
+        }
+
+        function formatNumber(value, digits = 3) {
+            if (value === null || value === undefined || Number.isNaN(value)) {
+                return '--';
+            }
+            return Number(value).toFixed(digits);
+        }
+
+        function disableControls(disabled, status) {
+            if (typeof status === 'string') {
+                statusSpan.textContent = status;
+            }
+            [timestampSelect, targetColumnSelect, targetNodeSelect, lookbackSelect, cleanStrategySelect, runBtn].forEach((el) => {
+                el.disabled = disabled || !cacheKey;
+            });
+            uploadForm.querySelector('button[type="submit"]').disabled = disabled;
+            fileInput.disabled = disabled;
+        }
+    </script>
+</body>
+</html>
+

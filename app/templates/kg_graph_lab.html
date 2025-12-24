@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>知识图谱实验室</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.css">
+</head>
+<body class="analysis-window">
+    <header class="analysis-header">
+        <div class="analysis-title">
+            <h1>知识图谱实验室</h1>
+            <p>基于上传数据自动构建参数关联关系，并支持一键根因分析</p>
+        </div>
+        <div class="analysis-controls">
+            <form id="kg-upload-form" class="kg-upload-form" enctype="multipart/form-data">
+                <label class="file-label" for="kg-file-input">上传历史数据</label>
+                <input id="kg-file-input" name="file" type="file" accept=".csv,.xls,.xlsx" required>
+                <button type="submit" class="primary">预览</button>
+            </form>
+        </div>
+    </header>
+
+    <main class="analysis-main kg-graph-main">
+        <section class="analysis-section">
+            <header>
+                <h2>数据配置</h2>
+                <p>完成预览后可选择时间字段与阈值，生成真实知识图谱</p>
+            </header>
+            <div class="analysis-content kg-context-grid">
+                <label>缓存键
+                    <input id="kg-cache-key" type="text" readonly placeholder="等待上传">
+                </label>
+                <label>时间字段
+                    <select id="kg-timestamp" disabled></select>
+                </label>
+                <label>相关性阈值
+                    <div class="slider-row">
+                        <input type="range" id="kg-threshold" min="0" max="1" step="0.05" value="0.5" disabled>
+                        <span id="kg-threshold-value">0.50</span>
+                    </div>
+                </label>
+                <label>最大关系条数
+                    <input type="number" id="kg-max-edges" value="200" min="10" max="2000" disabled>
+                </label>
+                <label>根因分析窗口（小时）
+                    <select id="kg-lookback" disabled>
+                        <option value="168">7 天</option>
+                        <option value="72">3 天</option>
+                        <option value="48">2 天</option>
+                        <option value="24">1 天</option>
+                        <option value="720">30 天</option>
+                    </select>
+                </label>
+            </div>
+            <footer class="analysis-actions">
+                <button id="kg-generate" type="button" class="primary" disabled>生成知识图谱</button>
+                <span id="kg-status" class="kg-status-text">请先上传数据</span>
+            </footer>
+        </section>
+
+        <section class="analysis-section">
+            <header>
+                <h2>图谱与分析</h2>
+                <p>点击节点可查看详细信息，并可触发根因诊断</p>
+            </header>
+            <div class="analysis-content kg-graph-layout">
+                <div class="kg-search-bar">
+                    <label for="kg-search-input">关键词检索</label>
+                    <div class="kg-search-controls">
+                        <input type="text" id="kg-search-input" placeholder="输入节点关键字，例如 SiO2" disabled>
+                        <button type="button" id="kg-search-btn" class="ghost" disabled>高亮节点</button>
+                        <button type="button" id="kg-search-clear" class="ghost" disabled>清除高亮</button>
+                    </div>
+                </div>
+                <div class="kg-graph-canvas" id="kg-graph-canvas">
+                    <div class="empty-state">请先生成知识图谱</div>
+                </div>
+                <aside class="kg-graph-sidebar">
+                    <section>
+                        <h3>生成概览</h3>
+                        <ul id="kg-summary" class="kg-summary-list empty">
+                            <li>等待生成...</li>
+                        </ul>
+                        <div id="kg-metrics" class="kg-metrics">--</div>
+                        <div id="kg-warnings" class="kg-warning-list hidden"></div>
+                        <div id="kg-isolated" class="kg-warning-list hidden"></div>
+                    </section>
+                    <section class="kg-node-info">
+                        <h3>节点详情</h3>
+                        <div id="kg-node-placeholder" class="empty-state">在图上选择节点查看详情</div>
+                        <div id="kg-node-detail" class="hidden">
+                            <p><strong>参数：</strong><span id="kg-node-name"></span></p>
+                            <p><strong>连接度：</strong><span id="kg-node-degree"></span></p>
+                            <p><strong>均值 / 标准差：</strong><span id="kg-node-stats"></span></p>
+                            <h4>关联参数</h4>
+                            <div id="kg-node-edges" class="kg-node-edges"></div>
+                            <button id="kg-run-root-cause" type="button" class="ghost">执行根因分析</button>
+                            <button id="kg-open-root-page" type="button" class="ghost">在独立页面查看</button>
+                        </div>
+                    </section>
+                    <section class="kg-path-panel">
+                        <h3>关联链路探索</h3>
+                        <label>起点参数
+                            <select id="kg-path-start" disabled></select>
+                        </label>
+                        <label>终点参数
+                            <select id="kg-path-end" disabled></select>
+                        </label>
+                        <div class="kg-path-config">
+                            <label>最大跳数
+                                <input type="number" id="kg-path-depth" value="4" min="2" max="6" disabled>
+                            </label>
+                            <label>返回条数
+                                <input type="number" id="kg-path-limit" value="5" min="1" max="20" disabled>
+                            </label>
+                        </div>
+                        <button id="kg-path-run" type="button" class="ghost" disabled>探索链路</button>
+                        <div id="kg-path-result" class="kg-path-result empty-state">等待生成图谱后探索。</div>
+                    </section>
+                    <section class="kg-root-cause-panel hidden" id="kg-root-result-panel">
+                        <h3>根因分析结果</h3>
+                        <div id="kg-root-summary" class="kg-root-summary">尚未执行分析。</div>
+                        <div id="kg-root-factors" class="kg-root-factors"></div>
+                    </section>
+                </aside>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const uploadForm = document.getElementById('kg-upload-form');
+        const fileInput = document.getElementById('kg-file-input');
+        const cacheKeyInput = document.getElementById('kg-cache-key');
+        const timestampSelect = document.getElementById('kg-timestamp');
+        const thresholdRange = document.getElementById('kg-threshold');
+        const thresholdValue = document.getElementById('kg-threshold-value');
+        const maxEdgesInput = document.getElementById('kg-max-edges');
+        const lookbackSelect = document.getElementById('kg-lookback');
+        const generateBtn = document.getElementById('kg-generate');
+        const statusSpan = document.getElementById('kg-status');
+
+        const summaryList = document.getElementById('kg-summary');
+        const metricsDiv = document.getElementById('kg-metrics');
+        const warningsDiv = document.getElementById('kg-warnings');
+        const isolatedDiv = document.getElementById('kg-isolated');
+        const graphCanvas = document.getElementById('kg-graph-canvas');
+        const searchInput = document.getElementById('kg-search-input');
+        const searchBtn = document.getElementById('kg-search-btn');
+        const searchClearBtn = document.getElementById('kg-search-clear');
+        const nodeDetailBox = document.getElementById('kg-node-detail');
+        const nodePlaceholder = document.getElementById('kg-node-placeholder');
+        const nodeNameSpan = document.getElementById('kg-node-name');
+        const nodeDegreeSpan = document.getElementById('kg-node-degree');
+        const nodeStatsSpan = document.getElementById('kg-node-stats');
+        const nodeEdgesDiv = document.getElementById('kg-node-edges');
+        const runRootCauseBtn = document.getElementById('kg-run-root-cause');
+        const openRootPageBtn = document.getElementById('kg-open-root-page');
+        const rootResultPanel = document.getElementById('kg-root-result-panel');
+        const rootSummaryDiv = document.getElementById('kg-root-summary');
+        const rootFactorsDiv = document.getElementById('kg-root-factors');
+        const pathStartSelect = document.getElementById('kg-path-start');
+        const pathEndSelect = document.getElementById('kg-path-end');
+        const pathDepthInput = document.getElementById('kg-path-depth');
+        const pathLimitInput = document.getElementById('kg-path-limit');
+        const pathRunBtn = document.getElementById('kg-path-run');
+        const pathResultDiv = document.getElementById('kg-path-result');
+
+        let cacheKey = '';
+        let previewPayload = null;
+        let graphNetwork = null;
+        let currentGraph = { nodes: [], edges: [] };
+        let selectedNodeId = null;
+        let graphNodesDataSet = null;
+        let graphEdgesDataSet = null;
+        const nodeStyleCache = new Map();
+        const highlightedNodes = new Set();
+
+        const baseNodeColor = () => ({
+            background: '#5970ff',
+            border: '#d7e0ff',
+            highlight: { background: '#ffd369', border: '#ffe9a8' },
+            hover: { background: '#7085ff', border: '#f1f5ff' },
+        });
+
+        const highlightNodeColor = () => ({
+            background: '#ffb74d',
+            border: '#ffe2aa',
+            highlight: { background: '#ffc96f', border: '#ffeec2' },
+            hover: { background: '#ffc36b', border: '#ffeec2' },
+        });
+
+        const selectedNodeColor = () => ({
+            background: '#ff5f5f',
+            border: '#ffd9d9',
+            highlight: { background: '#ff5f5f', border: '#ffd9d9' },
+            hover: { background: '#ff7474', border: '#ffe3e3' },
+        });
+
+        const cloneColor = (color) => ({
+            background: color.background,
+            border: color.border,
+            highlight: color.highlight ? { ...color.highlight } : undefined,
+            hover: color.hover ? { ...color.hover } : undefined,
+        });
+
+        openRootPageBtn.disabled = true;
+
+        thresholdRange.addEventListener('input', () => {
+            thresholdValue.textContent = Number(thresholdRange.value).toFixed(2);
+        });
+
+        uploadForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!fileInput.files.length) {
+                statusSpan.textContent = '请先选择文件';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            setLoading(true, '正在上传并预览...');
+
+            try {
+                const resp = await fetch('/preview', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!resp.ok) {
+                    const detail = await resp.json().catch(() => ({}));
+                    throw new Error(detail.detail || '预览失败');
+                }
+
+                previewPayload = await resp.json();
+                cacheKey = previewPayload.cache_key || '';
+                cacheKeyInput.value = cacheKey;
+                populateSelectors(previewPayload);
+                statusSpan.textContent = '数据加载完成，可设置阈值生成图谱';
+                generateBtn.disabled = false;
+            } catch (err) {
+                console.error(err);
+                statusSpan.textContent = `预览失败：${err.message}`;
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        function populateSelectors(payload) {
+            const { timestamp_candidates = [] } = payload;
+            fillOptions(timestampSelect, timestamp_candidates, true);
+
+            thresholdRange.disabled = false;
+            maxEdgesInput.disabled = false;
+            lookbackSelect.disabled = false;
+        }
+
+        function fillOptions(selectEl, items, includePlaceholder = false) {
+            selectEl.innerHTML = '';
+            if (includePlaceholder) {
+                selectEl.appendChild(new Option('-- 可选 --', ''));
+            }
+            items.forEach((item) => {
+                selectEl.appendChild(new Option(item, item));
+            });
+            selectEl.disabled = false;
+        }
+
+        generateBtn.addEventListener('click', async () => {
+            if (!cacheKey) {
+                statusSpan.textContent = '请先完成数据预览';
+                return;
+            }
+
+            const payload = {
+                cache_key: cacheKey,
+                timestamp_column: timestampSelect.value || null,
+                correlation_threshold: Number(thresholdRange.value),
+                max_edges: Number(maxEdgesInput.value) || 200,
+            };
+
+            setLoading(true, '正在计算相关性并生成图谱...');
+
+            try {
+                const resp = await fetch('/kg-graph/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+
+                if (!resp.ok) {
+                    const detail = await resp.json().catch(() => ({}));
+                    throw new Error(detail.detail || '生成图谱失败');
+                }
+
+                const result = await resp.json();
+                currentGraph = result;
+                renderSummary(result.summary || []);
+                renderMetrics(result.metrics || {});
+                renderWarnings(result.warnings || [], result.isolated_columns || []);
+                renderGraph(result);
+                statusSpan.textContent = '图谱生成完成';
+                clearNodeDetail();
+                populatePathSelectors(result.nodes || []);
+                resetSearchHighlight();
+            } catch (err) {
+                console.error(err);
+                statusSpan.textContent = `生成失败：${err.message}`;
+                graphCanvas.innerHTML = '<div class="empty-state">生成失败，请调整阈值后重试</div>';
+                clearNodeDetail();
+                populatePathSelectors([]);
+                resetSearchHighlight();
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        function renderSummary(list) {
+            summaryList.innerHTML = '';
+            summaryList.classList.toggle('empty', !list.length);
+            if (!list.length) {
+                summaryList.innerHTML = '<li>暂无生成信息</li>';
+                return;
+            }
+            list.forEach((item) => {
+                const li = document.createElement('li');
+                li.textContent = item;
+                summaryList.appendChild(li);
+            });
+        }
+
+        function renderMetrics(metrics) {
+            if (!metrics || !Object.keys(metrics).length) {
+                metricsDiv.textContent = '--';
+                return;
+            }
+            metricsDiv.innerHTML = `
+                <p>节点数：${formatNumber(metrics.node_count, 0)}</p>
+                <p>关系数：${formatNumber(metrics.edge_count, 0)}</p>
+                <p>平均相关系数：${formatNumber(metrics.avg_abs_corr, 3)}</p>
+                <p>最大相关系数：${formatNumber(metrics.max_abs_corr, 3)}</p>
+                <p>孤立字段：${formatNumber(metrics.isolated_count, 0)}</p>
+            `;
+        }
+
+        function renderWarnings(warnings, isolated) {
+            if (warnings.length) {
+                warningsDiv.classList.remove('hidden');
+                warningsDiv.innerHTML = `
+                    <h4>质量提示</h4>
+                    <ul>${warnings.map((item) => `<li>${item}</li>`).join('')}</ul>
+                `;
+            } else {
+                warningsDiv.classList.add('hidden');
+                warningsDiv.innerHTML = '';
+            }
+
+            if (isolated.length) {
+                const preview = isolated.slice(0, 12).join('、');
+                const suffix = isolated.length > 12 ? '…' : '';
+                isolatedDiv.classList.remove('hidden');
+                isolatedDiv.innerHTML = `
+                    <h4>未形成关联的字段</h4>
+                    <p>${preview}${suffix}</p>
+                `;
+            } else {
+                isolatedDiv.classList.add('hidden');
+                isolatedDiv.innerHTML = '';
+            }
+        }
+
+        function renderGraph(result) {
+            nodeStyleCache.clear();
+
+            const nodeItems = result.nodes.map((node) => {
+                const baseColorObj = cloneColor(baseNodeColor());
+                const value = Math.max(1, node.degree);
+                nodeStyleCache.set(node.node_id, {
+                    color: cloneColor(baseColorObj),
+                    value,
+                });
+                return {
+                    id: node.node_id,
+                    label: node.label,
+                    value,
+                    title: `度：${node.degree}\n均值：${formatNumber(node.mean_value)}\n标准差：${formatNumber(node.std_value)}`,
+                    color: cloneColor(baseColorObj),
+                };
+            });
+
+            graphNodesDataSet = new vis.DataSet(nodeItems);
+
+            graphEdgesDataSet = new vis.DataSet(result.edges.map((edge) => ({
+                id: `${edge.source}__${edge.target}`,
+                from: edge.source,
+                to: edge.target,
+                value: Math.max(0.1, edge.weight),
+                color: edge.direction === 'positive' ? '#5cd6c2' : '#ff7961',
+                title: `${edge.source} ↔ ${edge.target}\n相关系数：${formatNumber(edge.coefficient, 3)}`,
+                arrows: ''
+            })));
+
+            const options = {
+                physics: {
+                    enabled: true,
+                    stabilization: true,
+                    barnesHut: {
+                        gravitationalConstant: -4200,
+                        centralGravity: 0.3,
+                        springLength: 160,
+                        springConstant: 0.03,
+                    },
+                },
+                nodes: {
+                    shape: 'dot',
+                    scaling: {
+                        min: 8,
+                        max: 28,
+                    },
+                    font: {
+                        color: '#b6ff9b',
+                        face: 'Segoe UI, sans-serif',
+                    },
+                    borderWidth: 1,
+                    borderWidthSelected: 2,
+                },
+                edges: {
+                    smooth: true,
+                    width: 1.5,
+                    selectionWidth: 2.5,
+                    color: {
+                        inherit: false,
+                    },
+                },
+                interaction: {
+                    hover: true,
+                    tooltipDelay: 120,
+                    zoomView: true,
+                },
+            };
+
+            graphCanvas.innerHTML = '';
+            graphNetwork = new vis.Network(graphCanvas, { nodes: graphNodesDataSet, edges: graphEdgesDataSet }, options);
+            [searchInput, searchBtn, searchClearBtn].forEach((el) => {
+                if (el) {
+                    el.disabled = false;
+                }
+            });
+
+            graphNetwork.on('selectNode', (params) => {
+                const nodeId = params.nodes[0];
+                selectedNodeId = nodeId;
+                applySelectionStyles([nodeId]);
+                showNodeDetail(nodeId);
+            });
+
+            graphNetwork.on('deselectNode', () => {
+                selectedNodeId = null;
+                applySelectionStyles([]);
+                clearNodeDetail();
+            });
+        }
+
+        function showNodeDetail(nodeId) {
+            const node = currentGraph.nodes.find((item) => item.node_id === nodeId);
+            if (!node) {
+                clearNodeDetail();
+                return;
+            }
+
+            nodePlaceholder.classList.add('hidden');
+            nodeDetailBox.classList.remove('hidden');
+            nodeNameSpan.textContent = node.label;
+            nodeDegreeSpan.textContent = node.degree;
+            nodeStatsSpan.textContent = `${formatNumber(node.mean_value)} / ${formatNumber(node.std_value)}`;
+            runRootCauseBtn.disabled = false;
+            openRootPageBtn.disabled = false;
+            if (!pathStartSelect.disabled) {
+                pathStartSelect.value = nodeId;
+            }
+
+            const related = currentGraph.edges
+                .filter((edge) => edge.source === nodeId || edge.target === nodeId)
+                .sort((a, b) => Math.abs(b.weight) - Math.abs(a.weight));
+
+            if (!related.length) {
+                nodeEdgesDiv.innerHTML = '<p class="hint">暂无关联关系</p>';
+            } else {
+                const list = document.createElement('ul');
+                related.forEach((edge) => {
+                    const other = edge.source === nodeId ? edge.target : edge.source;
+                    const relation = edge.direction === 'positive' ? '正相关' : '负相关';
+                    const li = document.createElement('li');
+                    li.innerHTML = `
+                        <strong>${other}</strong>
+                        <span>${relation}</span>
+                        <span>r = ${formatNumber(edge.coefficient, 3)}</span>
+                    `;
+                    list.appendChild(li);
+                });
+                nodeEdgesDiv.innerHTML = '';
+                nodeEdgesDiv.appendChild(list);
+            }
+
+            rootResultPanel.classList.add('hidden');
+            rootSummaryDiv.textContent = '尚未执行分析。';
+            rootFactorsDiv.innerHTML = '';
+        }
+
+        function clearNodeDetail() {
+            selectedNodeId = null;
+            nodeDetailBox.classList.add('hidden');
+            nodePlaceholder.classList.remove('hidden');
+            nodeEdgesDiv.innerHTML = '';
+            rootResultPanel.classList.add('hidden');
+            runRootCauseBtn.disabled = true;
+            openRootPageBtn.disabled = true;
+        }
+
+        searchBtn.addEventListener('click', () => {
+            const keyword = (searchInput.value || '').trim();
+            highlightNodes(keyword);
+        });
+
+        searchInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                highlightNodes(searchInput.value);
+            }
+        });
+
+        searchClearBtn.addEventListener('click', () => {
+            searchInput.value = '';
+            resetSearchHighlight();
+        });
+
+        function populatePathSelectors(nodes) {
+            const sorted = [...nodes].sort((a, b) => a.label.localeCompare(b.label));
+            [pathStartSelect, pathEndSelect].forEach((select) => {
+                select.innerHTML = '';
+                sorted.forEach((node) => {
+                    select.appendChild(new Option(node.label, node.node_id));
+                });
+                select.disabled = sorted.length === 0;
+            });
+
+            if (sorted.length >= 1) {
+                pathStartSelect.value = sorted[0].node_id;
+            }
+            if (sorted.length >= 2) {
+                pathEndSelect.value = sorted[1].node_id;
+            } else if (sorted.length === 1) {
+                pathEndSelect.value = sorted[0].node_id;
+            }
+
+            const disabledState = sorted.length < 2;
+            pathDepthInput.disabled = disabledState;
+            pathLimitInput.disabled = disabledState;
+            pathRunBtn.disabled = disabledState;
+            if (disabledState) {
+                pathResultDiv.className = 'kg-path-result empty-state';
+                pathResultDiv.textContent = '等待生成图谱后探索。';
+            }
+        }
+
+        pathRunBtn.addEventListener('click', async () => {
+            if (pathRunBtn.hasAttribute('disabled')) {
+                return;
+            }
+            if (!cacheKey) {
+                statusSpan.textContent = '请先生成知识图谱';
+                return;
+            }
+
+            const start = pathStartSelect.value;
+            const end = pathEndSelect.value;
+            if (!start || !end) {
+                statusSpan.textContent = '请同时选择起点和终点参数';
+                return;
+            }
+
+            setLoading(true, '正在探索关联链路...');
+
+            try {
+                const payload = {
+                    cache_key: cacheKey,
+                    start,
+                    end,
+                    correlation_threshold: Number(thresholdRange.value),
+                    max_depth: Number(pathDepthInput.value) || 4,
+                    max_paths: Number(pathLimitInput.value) || 5,
+                    max_edges: Number(maxEdgesInput.value) || 200,
+                };
+
+                const resp = await fetch('/kg-graph/path', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+
+                if (!resp.ok) {
+                    const detail = await resp.json().catch(() => ({}));
+                    throw new Error(detail.detail || '链路探索失败');
+                }
+
+                const result = await resp.json();
+                renderPathResult(result);
+                statusSpan.textContent = '链路探索完成';
+            } catch (err) {
+                console.error(err);
+                statusSpan.textContent = `链路探索失败：${err.message}`;
+                pathResultDiv.className = 'kg-path-result empty-state';
+                pathResultDiv.textContent = err.message;
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        function renderPathResult(result) {
+            pathResultDiv.className = 'kg-path-result';
+            pathResultDiv.innerHTML = '';
+
+            const summary = (result.summary || []).map((item) => `<p>${item}</p>`).join('');
+            if (summary) {
+                pathResultDiv.innerHTML += summary;
+            }
+
+            if (result.paths && result.paths.length) {
+                const list = document.createElement('ul');
+                list.className = 'kg-path-list';
+                result.paths.forEach((entry) => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `
+                        <div class="path-chain">${entry.nodes.join(' → ')}</div>
+                        <span class="path-score">评分 ${formatNumber(entry.score, 3)}</span>
+                    `;
+                    list.appendChild(li);
+                });
+                const header = document.createElement('h4');
+                header.textContent = '候选路径';
+                pathResultDiv.appendChild(header);
+                pathResultDiv.appendChild(list);
+            }
+
+            if (result.bridges && result.bridges.length) {
+                const list = document.createElement('ul');
+                list.className = 'kg-bridge-list';
+                result.bridges.forEach((entry) => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `
+                        <strong>${entry.node}</strong>
+                        <span>与起点: ${formatNumber(entry.source_weight, 3)}</span>
+                        <span>与终点: ${formatNumber(entry.target_weight, 3)}</span>
+                        <span>综合: ${formatNumber(entry.combined_score, 3)}</span>
+                    `;
+                    list.appendChild(li);
+                });
+                const header = document.createElement('h4');
+                header.textContent = '共现节点';
+                pathResultDiv.appendChild(header);
+                pathResultDiv.appendChild(list);
+            }
+
+            if (!pathResultDiv.innerHTML) {
+                pathResultDiv.className = 'kg-path-result empty-state';
+                pathResultDiv.textContent = '未找到符合条件的路径，可调整阈值或参数后重试。';
+            }
+        }
+
+        runRootCauseBtn.addEventListener('click', async () => {
+            if (!selectedNodeId || !cacheKey) {
+                statusSpan.textContent = '请选择节点后再执行根因分析';
+                return;
+            }
+
+            const payload = {
+                cache_key: cacheKey,
+                target_column: selectedNodeId,
+                target_node: selectedNodeId,
+                timestamp_column: timestampSelect.value || null,
+                lookback_window_hours: Number(lookbackSelect.value) || null,
+            };
+
+            setLoading(true, '正在执行根因分析...');
+
+            try {
+                const resp = await fetch('/kg-root-cause/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+
+                if (!resp.ok) {
+                    const detail = await resp.json().catch(() => ({}));
+                    throw new Error(detail.detail || '根因分析失败');
+                }
+
+                const result = await resp.json();
+                renderRootCause(result);
+                statusSpan.textContent = '根因分析完成';
+            } catch (err) {
+                console.error(err);
+                statusSpan.textContent = `根因分析失败：${err.message}`;
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        openRootPageBtn.addEventListener('click', () => {
+            if (!selectedNodeId || !cacheKey) {
+                statusSpan.textContent = '请选择节点后再打开根因页面';
+                return;
+            }
+
+            const params = new URLSearchParams();
+            params.set('cache_key', cacheKey);
+            params.set('target', selectedNodeId);
+
+            if (timestampSelect.value) {
+                params.set('timestamp', timestampSelect.value);
+            }
+            if (lookbackSelect.value) {
+                params.set('lookback', lookbackSelect.value);
+            }
+
+            params.set('autorun', '1');
+
+            window.open(`/kg-root-cause-lab?${params.toString()}`, '_blank');
+        });
+
+        function renderRootCause(result) {
+            rootResultPanel.classList.remove('hidden');
+            rootSummaryDiv.textContent = result.summary || '暂无总结';
+
+            if (!result.root_causes?.length && !result.impacts?.length) {
+                rootFactorsDiv.innerHTML = '<p class="hint">未识别到显著根因或影响参数。</p>';
+                return;
+            }
+
+            const section = document.createElement('div');
+            if (result.root_causes?.length) {
+                const header = document.createElement('h4');
+                header.textContent = '可能根因';
+                section.appendChild(header);
+
+                const list = document.createElement('ul');
+                result.root_causes.slice(0, 5).forEach((item) => {
+                    const li = document.createElement('li');
+                    li.textContent = `${item.label} (r = ${formatNumber(item.correlation, 2)})`;
+                    list.appendChild(li);
+                });
+                section.appendChild(list);
+            }
+
+            if (result.impacts?.length) {
+                const header = document.createElement('h4');
+                header.textContent = '下游影响';
+                section.appendChild(header);
+
+                const list = document.createElement('ul');
+                result.impacts.slice(0, 5).forEach((item) => {
+                    const li = document.createElement('li');
+                    li.textContent = `${item.label} (r = ${formatNumber(item.correlation, 2)})`;
+                    list.appendChild(li);
+                });
+                section.appendChild(list);
+            }
+
+            rootFactorsDiv.innerHTML = '';
+            rootFactorsDiv.appendChild(section);
+        }
+
+        function setLoading(disabled, message) {
+            if (typeof message === 'string') {
+                statusSpan.textContent = message;
+            }
+            [generateBtn, thresholdRange, maxEdgesInput, lookbackSelect, timestampSelect].forEach((el) => {
+                el.disabled = disabled || !cacheKey;
+            });
+            [pathStartSelect, pathEndSelect, pathDepthInput, pathLimitInput, pathRunBtn].forEach((el) => {
+                if (el) {
+                    el.disabled = disabled || !cacheKey || (el.tagName === 'SELECT' && !el.options.length);
+                }
+            });
+            [searchInput, searchBtn, searchClearBtn].forEach((el) => {
+                if (el) {
+                    const allow = Boolean(graphNodesDataSet) && !disabled;
+                    el.disabled = !allow;
+                }
+            });
+            uploadForm.querySelector('button[type="submit"]').disabled = disabled;
+            fileInput.disabled = disabled;
+            runRootCauseBtn.disabled = disabled || !selectedNodeId;
+            openRootPageBtn.disabled = disabled || !selectedNodeId || !cacheKey;
+        }
+
+        function highlightNodes(keyword) {
+            if (!graphNodesDataSet) {
+                return;
+            }
+            const trimmed = (keyword || '').trim().toLowerCase();
+            if (!trimmed) {
+                resetSearchHighlight();
+                statusSpan.textContent = '已清除高亮';
+                return;
+            }
+
+            const matchedIds = [];
+            highlightedNodes.clear();
+            graphNodesDataSet.forEach((node) => {
+                if (node.label.toLowerCase().includes(trimmed)) {
+                    matchedIds.push(node.id);
+                    highlightedNodes.add(node.id);
+                }
+            });
+
+            const selectedIds = graphNetwork ? graphNetwork.getSelectedNodes() : [];
+            applySelectionStyles(selectedIds, { skipSelectSync: true });
+
+            if (matchedIds.length) {
+                graphNetwork.selectNodes(matchedIds);
+                graphNetwork.fit({ nodes: matchedIds, animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
+                statusSpan.textContent = `已高亮 ${matchedIds.length} 个匹配节点`;
+            } else {
+                graphNetwork.unselectAll();
+                applySelectionStyles([]);
+                statusSpan.textContent = '没有找到匹配节点，请尝试其它关键词';
+            }
+        }
+
+        function resetSearchHighlight() {
+            if (!graphNodesDataSet) {
+                return;
+            }
+            highlightedNodes.clear();
+            const selectedIds = graphNetwork ? graphNetwork.getSelectedNodes() : [];
+            applySelectionStyles(selectedIds, { skipSelectSync: true });
+            if (graphNetwork) {
+                graphNetwork.unselectAll();
+                applySelectionStyles([]);
+            }
+            [searchInput, searchBtn, searchClearBtn].forEach((el) => {
+                if (el) {
+                    el.disabled = !graphNodesDataSet;
+                }
+            });
+        }
+
+        function applySelectionStyles(selectedIds, options = {}) {
+            if (!graphNodesDataSet) {
+                return;
+            }
+
+            const selectedSet = new Set(selectedIds || []);
+            const applyUpdates = [];
+
+            graphNodesDataSet.forEach((node) => {
+                const base = nodeStyleCache.get(node.id);
+                if (!base) {
+                    return;
+                }
+
+                if (selectedSet.has(node.id)) {
+                    applyUpdates.push({ id: node.id, color: cloneColor(selectedNodeColor()), value: Math.max(base.value * 1.1, base.value + 2) });
+                } else if (highlightedNodes.has(node.id)) {
+                    applyUpdates.push({ id: node.id, color: cloneColor(highlightNodeColor()), value: Math.max(base.value * 1.05, base.value + 1) });
+                } else {
+                    applyUpdates.push({ id: node.id, color: cloneColor(base.color), value: base.value });
+                }
+            });
+
+            if (applyUpdates.length) {
+                graphNodesDataSet.update(applyUpdates);
+            }
+            if (!options.skipSelectSync && graphNetwork && selectedSet.size) {
+                graphNetwork.selectNodes(Array.from(selectedSet));
+            }
+        }
+
+        function formatNumber(value, digits = 2) {
+            if (value === null || value === undefined || Number.isNaN(value)) {
+                return '--';
+            }
+            return Number(value).toFixed(digits);
+        }
+    </script>
+</body>
+</html>

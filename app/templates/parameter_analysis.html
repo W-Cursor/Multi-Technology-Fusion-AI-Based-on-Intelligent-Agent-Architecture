@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>参数影响分析</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="analysis-window">
+    <header class="analysis-header">
+        <div class="analysis-title">
+            <h1>参数影响分析</h1>
+            <p>聚焦目标参数与关键影响因素</p>
+        </div>
+        <div class="analysis-controls">
+            <div class="analysis-parameter-select">
+                <label for="analysis-parameter">目标参数</label>
+                <select id="analysis-parameter"></select>
+            </div>
+            <div class="analysis-time-range">
+                <label for="analysis-time-range">时间范围</label>
+                <select id="analysis-time-range">
+                    <option value="7d">近 7 天</option>
+                    <option value="14d">近 14 天</option>
+                    <option value="30d" selected>近 30 天</option>
+                    <option value="90d">近 90 天</option>
+                </select>
+            </div>
+            <button id="refresh-analysis" type="button">刷新分析</button>
+        </div>
+    </header>
+
+    <main class="analysis-main">
+        <section class="analysis-section auto-insight">
+            <header>
+                <h2>自动分析结果</h2>
+                <p>基于历史数据自动识别影响因素排名</p>
+            </header>
+            <div class="analysis-content">
+                <div class="insight-summary">
+                    <div class="metric-card">
+                        <span>当前状态</span>
+                        <strong id="metric-status">--</strong>
+                        <small id="metric-trend">--</small>
+                    </div>
+                    <div class="metric-card">
+                        <span>最新值</span>
+                        <strong id="metric-latest">--</strong>
+                        <small id="metric-mean">均值 -- · 标准差 --</small>
+                    </div>
+                    <div class="metric-card">
+                        <span>预测趋势</span>
+                        <strong id="metric-forecast-trend">--</strong>
+                        <small id="metric-forecast-summary">--</small>
+                    </div>
+                </div>
+                <div class="insight-charts">
+                    <section>
+                        <h3>影响因素贡献度</h3>
+                        <div id="auto-factor-chart" class="chart-placeholder">等待分析...</div>
+                    </section>
+                    <section>
+                        <h3>目标参数趋势</h3>
+                        <div id="auto-trend-chart" class="chart-placeholder">等待分析...</div>
+                    </section>
+                </div>
+                <div class="insight-table">
+                    <h3>关键影响因素</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>影响参数</th>
+                                <th>相关性</th>
+                                <th>影响方向</th>
+                                <th>备注</th>
+                            </tr>
+                        </thead>
+                        <tbody id="auto-factor-table">
+                            <tr><td colspan="4">暂无数据</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <section class="analysis-section expert-insight">
+            <header>
+                <h2>专家知识库</h2>
+                <div class="expert-actions">
+                    <button id="open-expert-library" type="button" class="ghost">管理知识库</button>
+                    <span id="expert-updated-at">最后更新：--</span>
+                </div>
+            </header>
+            <div class="analysis-content">
+                <div class="expert-overview">
+                    <div class="expert-card">
+                        <h3>关联方案</h3>
+                        <p id="expert-scheme">自动匹配中...</p>
+                        <small id="expert-description">--</small>
+                    </div>
+                    <div class="expert-card">
+                        <h3>受控参数</h3>
+                        <div id="expert-parameters" class="tag-list empty">等待匹配...</div>
+                    </div>
+                </div>
+                <div class="expert-table">
+                    <h3>专家权重与说明</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>受控参数</th>
+                                <th>权重</th>
+                                <th>调控思路</th>
+                            </tr>
+                        </thead>
+                        <tbody id="expert-factor-table">
+                            <tr><td colspan="3">暂无专家信息</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <section class="analysis-section recommendations">
+            <header>
+                <h2>调优建议</h2>
+                <p>融合自动分析与专家知识的综合建议</p>
+            </header>
+            <div class="analysis-content">
+                <div id="recommendation-cards" class="recommendation-grid">
+                    <article class="recommendation-card empty">
+                        <h3>等待分析</h3>
+                        <p>加载完成后将展示建议关注的参数与调整方向。</p>
+                    </article>
+                </div>
+                <div class="recommendation-actions">
+                    <button id="export-recommendation" type="button" class="ghost" disabled>导出分析报告</button>
+                    <button id="mark-verified" type="button" disabled>标记为已关注</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div id="expert-library-modal" class="expert-modal hidden">
+        <div class="expert-modal-content">
+            <header>
+                <h2>专家知识库管理</h2>
+                <button type="button" id="close-expert-modal" class="close-btn">×</button>
+            </header>
+            <main>
+                <div class="expert-modal-body">
+                    <aside>
+                        <h3>方案列表</h3>
+                        <ul id="expert-scheme-list" class="expert-list">
+                            <li>加载中...</li>
+                        </ul>
+                        <button id="create-expert-scheme" type="button" class="ghost">新建方案</button>
+                    </aside>
+                    <section class="expert-form" id="expert-form-container">
+                        <h3>方案详情</h3>
+                        <div class="expert-scroll-hint" id="expert-scroll-hint">↓ 向下滚动查看更多字段</div>
+                        <form id="expert-form">
+                            <details class="expert-section" open>
+                                <summary>基础信息</summary>
+                                <label>方案名称
+                                    <input type="text" id="expert-name" required>
+                                </label>
+                                <label>目标参数
+                                    <select id="expert-target" required></select>
+                                </label>
+                                <label>受控参数
+                                    <select id="expert-controlled" multiple size="8"></select>
+                                </label>
+                            </details>
+                            <details class="expert-section" open>
+                                <summary>权重配置</summary>
+                                <p class="expert-section-tip">格式“参数:权重:备注”，备注可选，例如：溶出温度:0.35:保持 105℃。</p>
+                                <label>权重配置
+                                    <textarea id="expert-weights" placeholder="参数:权重 或 参数:权重:备注"></textarea>
+                                </label>
+                            </details>
+                            <details class="expert-section" open>
+                                <summary>调控说明</summary>
+                                <label>调控说明
+                                    <textarea id="expert-notes" placeholder="说明调控逻辑、注意事项"></textarea>
+                                </label>
+                            </details>
+                            <div class="expert-form-actions">
+                                <button type="submit" class="primary">保存方案</button>
+                                <button type="button" id="delete-expert-scheme" class="ghost">删除</button>
+                            </div>
+                        </form>
+                    </section>
+                </div>
+            </main>
+        </div>
+        <div class="expert-modal-backdrop"></div>
+    </div>
+
+    <script>
+        // 为后续接口联调预留的初始化逻辑
+        const parameterSelect = document.getElementById('analysis-parameter');
+        const timeRangeSelect = document.getElementById('analysis-time-range');
+        const refreshButton = document.getElementById('refresh-analysis');
+        const expertModal = document.getElementById('expert-library-modal');
+        const expertBackdrop = document.querySelector('.expert-modal-backdrop');
+        const expertSchemeList = document.getElementById('expert-scheme-list');
+        const expertFormContainer = document.getElementById('expert-form-container');
+        const expertForm = document.getElementById('expert-form');
+        const expertNameInput = document.getElementById('expert-name');
+        const expertTargetSelect = document.getElementById('expert-target');
+        const expertControlledSelect = document.getElementById('expert-controlled');
+        const expertWeightsTextarea = document.getElementById('expert-weights');
+        const expertNotesTextarea = document.getElementById('expert-notes');
+        const deleteExpertBtn = document.getElementById('delete-expert-scheme');
+        const createExpertBtn = document.getElementById('create-expert-scheme');
+        const exportBtn = document.getElementById('export-recommendation');
+        const markBtn = document.getElementById('mark-verified');
+        const modelPanel = document.getElementById('model-panel');
+        const modelPanelEmpty = document.getElementById('model-panel-empty');
+        const modelTrainForm = document.getElementById('model-train-form');
+        const modelTrainLog = document.getElementById('model-train-log');
+        const modelPredictForm = document.getElementById('model-predict-form');
+        const modelPredictFields = document.getElementById('model-predict-fields');
+        const modelPredictResult = document.getElementById('model-predict-result');
+        const modelTypeSelect = document.getElementById('model-type');
+        const lagColumnsSelect = document.getElementById('lag-columns');
+        const modelExtraOptions = document.getElementById('model-extra-options');
+
+        let analysisState = {
+            cacheKey: '',
+            parameter: '',
+            timeRange: '30d',
+            horizon: 30,
+            timestampColumn: null,
+            availableParameters: [],
+            expertSchemes: [],
+            activeSchemeId: null,
+        };
+
+        function getQueryParam(name) {
+            const params = new URLSearchParams(window.location.search);
+            return params.get(name) || '';
+        }
+
+        function initialiseStateFromQuery() {
+            const cacheKey = getQueryParam('cache_key');
+            const parameter = getQueryParam('parameter');
+            const timeRange = getQueryParam('time_range') || '30d';
+            const horizon = Number(getQueryParam('horizon') || '30');
+            if (cacheKey) {
+                analysisState.cacheKey = cacheKey;
+            }
+            if (parameter) {
+                analysisState.parameter = parameter;
+            }
+            analysisState.timeRange = timeRange;
+            analysisState.horizon = Number.isFinite(horizon) ? horizon : 30;
+            if (timeRangeSelect) {
+                timeRangeSelect.value = analysisState.timeRange;
+            }
+        }
+
+        function setLoadingState() {
+            document.getElementById('metric-status').textContent = '加载中';
+            document.getElementById('metric-trend').textContent = '';
+            document.getElementById('metric-latest').textContent = '--';
+            document.getElementById('metric-mean').textContent = '均值 -- · 标准差 --';
+            document.getElementById('metric-forecast-trend').textContent = '--';
+            document.getElementById('metric-forecast-summary').textContent = '分析中...';
+            document.getElementById('auto-factor-chart').textContent = '正在计算影响因素...';
+            document.getElementById('auto-trend-chart').textContent = '正在绘制趋势...';
+            document.getElementById('auto-factor-table').innerHTML = '<tr><td colspan="4">分析中...</td></tr>';
+            document.getElementById('expert-scheme').textContent = '匹配中...';
+            document.getElementById('expert-description').textContent = '';
+            document.getElementById('expert-parameters').textContent = '匹配中...';
+            document.getElementById('expert-parameters').classList.add('empty');
+            document.getElementById('expert-factor-table').innerHTML = '<tr><td colspan="3">匹配中...</td></tr>';
+            document.getElementById('recommendation-cards').innerHTML = `
+                <article class="recommendation-card loading">
+                    <h3>加载中</h3>
+                    <p>正在生成综合建议，请稍候。</p>
+                </article>
+            `;
+            exportBtn.disabled = true;
+            markBtn.disabled = true;
+        }
+
+        async function fetchJson(url, options) {
+            const response = await fetch(url, options);
+            if (!response.ok) {
+                let detail = `HTTP ${response.status}`;
+                try {
+                    const data = await response.json();
+                    if (data.detail) detail = data.detail;
+                    if (data.error) detail = data.error;
+                } catch (err) {
+                    /* ignore */
+                }
+                throw new Error(detail);
+            }
+            return response.json();
+        }
+
+        function populateParameterSelect(parameters) {
+            parameterSelect.innerHTML = '';
+            if (!parameters.length) {
+                parameterSelect.innerHTML = '<option value="" disabled selected>暂无可分析参数</option>';
+                refreshButton.disabled = true;
+                return;
+            }
+            parameters.forEach((param) => {
+                const option = document.createElement('option');
+                option.value = param;
+                option.textContent = param;
+                parameterSelect.appendChild(option);
+            });
+            refreshButton.disabled = false;
+            if (analysisState.parameter && parameters.includes(analysisState.parameter)) {
+                parameterSelect.value = analysisState.parameter;
+            } else {
+                analysisState.parameter = parameterSelect.value;
+            }
+        }
+
+        function renderAutoFactors(factors) {
+            if (!Array.isArray(factors) || !factors.length) {
+                document.getElementById('auto-factor-table').innerHTML = '<tr><td colspan="4">未识别到显著影响因素</td></tr>';
+                document.getElementById('auto-factor-chart').textContent = '暂无贡献度数据';
+                return;
+            }
+
+            document.getElementById('auto-factor-table').innerHTML = factors.map((item) => `
+                <tr>
+                    <td>${item.name}</td>
+                    <td>${(item.score * 100).toFixed(1)}%</td>
+                    <td>${item.direction}</td>
+                    <td>${item.notes || '—'}</td>
+                </tr>
+            `).join('');
+
+            const maxScore = Math.max(...factors.map((item) => item.score));
+            const barHtml = factors.map((item, index) => {
+                const ratio = maxScore ? (item.score / maxScore) : 0;
+                return `
+                    <div class="bar-item">
+                        <span class="label">${item.name}</span>
+                        <div class="bar">
+                            <div class="fill" style="width:${(ratio * 100).toFixed(0)}%;"></div>
+                        </div>
+                        <span class="value">${(item.score * 100).toFixed(1)}%</span>
+                    </div>
+                `;
+            }).join('');
+            document.getElementById('auto-factor-chart').innerHTML = `<div class="bar-chart">${barHtml}</div>`;
+        }
+
+        function renderTrendChart(history) {
+            if (!Array.isArray(history) || !history.length) {
+                document.getElementById('auto-trend-chart').textContent = '暂无历史数据';
+                return;
+            }
+
+            const points = history.map((item) => ({
+                label: item.index,
+                value: Number(item.value),
+            }));
+
+            const bounds = points.reduce((acc, item) => {
+                return {
+                    min: Math.min(acc.min, item.value),
+                    max: Math.max(acc.max, item.value),
+                };
+            }, { min: points[0].value, max: points[0].value });
+
+            const width = 640;
+            const height = 300;
+            const paddingLeft = 50;
+            const paddingBottom = 60;
+            const paddingTop = 20;
+            const paddingRight = 20;
+
+            const labels = points.map((item) => item.label);
+            const labelStep = Math.max(1, Math.floor(labels.length / 6));
+
+            const path = points.map((item, index) => {
+                const x = paddingLeft + (index / Math.max(1, points.length - 1)) * (width - paddingLeft - paddingRight);
+                const yRatio = (item.value - bounds.min) / Math.max(1e-9, (bounds.max - bounds.min));
+                const y = height - paddingBottom - yRatio * (height - paddingTop - paddingBottom);
+                return `${x},${y}`;
+            }).join(' ');
+
+            const circles = points.map((item, index) => {
+                const x = paddingLeft + (index / Math.max(1, points.length - 1)) * (width - paddingLeft - paddingRight);
+                const yRatio = (item.value - bounds.min) / Math.max(1e-9, (bounds.max - bounds.min));
+                const y = height - paddingBottom - yRatio * (height - paddingTop - paddingBottom);
+                return `<circle cx="${x}" cy="${y}" r="4" data-label="${item.label}" data-value="${item.value.toFixed(2)}"></circle>`;
+            }).join('');
+
+            const xAxis = labels.map((label, index) => {
+                if (index % labelStep !== 0 && index !== labels.length - 1) return '';
+                const x = paddingLeft + (index / Math.max(1, points.length - 1)) * (width - paddingLeft - paddingRight);
+                return `<text x="${x}" y="${height - 20}" text-anchor="end" transform="rotate(-30 ${x},${height - 20})">${label}</text>`;
+            }).join('');
+
+            const yTicks = 4;
+            const yLines = Array.from({ length: yTicks + 1 }, (_, idx) => {
+                const value = bounds.min + ((bounds.max - bounds.min) * idx) / yTicks;
+                const y = height - paddingBottom - ((value - bounds.min) / Math.max(1e-9, bounds.max - bounds.min)) * (height - paddingTop - paddingBottom);
+                return `
+                    <line x1="${paddingLeft}" y1="${y}" x2="${width - paddingRight}" y2="${y}" class="chart-grid-line" />
+                    <text x="${paddingLeft - 8}" y="${y + 4}" class="axis-label">${value.toFixed(2)}</text>
+                `;
+            }).join('');
+
+            document.getElementById('auto-trend-chart').innerHTML = `
+                <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+                    <polyline points="${path}" fill="none" stroke="#6de2ff" stroke-width="2.5" />
+                    ${circles}
+                    ${xAxis}
+                    ${yLines}
+                </svg>
+            `;
+        }
+
+        function renderExpertScheme(expert) {
+            if (!expert) {
+                document.getElementById('expert-scheme').textContent = '未匹配到知识方案';
+                document.getElementById('expert-description').textContent = '';
+                document.getElementById('expert-parameters').classList.add('empty');
+                document.getElementById('expert-parameters').textContent = '暂无受控参数';
+                document.getElementById('expert-factor-table').innerHTML = '<tr><td colspan="3">暂无专家信息</td></tr>';
+                analysisState.activeSchemeId = null;
+                return;
+            }
+
+            document.getElementById('expert-scheme').textContent = expert.name;
+            document.getElementById('expert-description').textContent = expert.description || '—';
+            if (expert.updated_at) {
+                document.getElementById('expert-updated-at').textContent = `最后更新：${expert.updated_at}`;
+            }
+
+            const paramsContainer = document.getElementById('expert-parameters');
+            if (expert.controlled_parameters && expert.controlled_parameters.length) {
+                paramsContainer.classList.remove('empty');
+                paramsContainer.innerHTML = expert.controlled_parameters.map((param) => `<span class="tag">${param}</span>`).join('');
+            } else {
+                paramsContainer.classList.add('empty');
+                paramsContainer.textContent = '无受控参数';
+            }
+
+            if (expert.factors && expert.factors.length) {
+                document.getElementById('expert-factor-table').innerHTML = expert.factors.map((row) => `
+                    <tr>
+                        <td>${row.parameter}</td>
+                        <td>${row.weight ?? '—'}</td>
+                        <td>${row.note || '—'}</td>
+                    </tr>
+                `).join('');
+            } else {
+                document.getElementById('expert-factor-table').innerHTML = '<tr><td colspan="3">暂无权重记录</td></tr>';
+            }
+            analysisState.activeSchemeId = expert.scheme_id;
+        }
+
+        function renderRecommendations(recommendations) {
+            const container = document.getElementById('recommendation-cards');
+            if (!Array.isArray(recommendations) || !recommendations.length) {
+                container.innerHTML = `
+                    <article class="recommendation-card empty">
+                        <h3>暂无建议</h3>
+                        <p>等待专家或自动分析提供可执行建议。</p>
+                    </article>
+                `;
+                exportBtn.disabled = true;
+                markBtn.disabled = true;
+                return;
+            }
+
+            container.innerHTML = recommendations.map((item) => `
+                <article class="recommendation-card">
+                    <h3>${item.title}</h3>
+                    <p>${item.detail}</p>
+                    ${item.risk ? `<footer>风险提示：${item.risk}</footer>` : ''}
+                </article>
+            `).join('');
+            exportBtn.disabled = false;
+            markBtn.disabled = false;
+        }
+
+        function applyAnalysisResponse(data) {
+            document.getElementById('metric-status').textContent = data.status;
+            document.getElementById('metric-trend').textContent = `趋势：${data.trend}`;
+            document.getElementById('metric-latest').textContent = data.latest_value !== null && data.latest_value !== undefined ? Number(data.latest_value).toFixed(2) : '—';
+            document.getElementById('metric-mean').textContent = `均值 ${data.mean_value !== null && data.mean_value !== undefined ? Number(data.mean_value).toFixed(2) : '—'} · 标准差 ${data.std_dev !== null && data.std_dev !== undefined ? Number(data.std_dev).toFixed(2) : '—'}`;
+            document.getElementById('metric-forecast-trend').textContent = data.forecast_trend || '—';
+            document.getElementById('metric-forecast-summary').textContent = data.forecast_summary || '—';
+
+            renderAutoFactors(data.auto_factors);
+            renderTrendChart(data.history);
+            renderExpertScheme(data.expert_scheme);
+            renderRecommendations(data.recommendations);
+
+            if (Array.isArray(data.available_parameters) && data.available_parameters.length) {
+                analysisState.availableParameters = data.available_parameters;
+                populateParameterSelect(data.available_parameters);
+            }
+            analysisState.timestampColumn = data.timestamp_column || null;
+        }
+
+        async function fetchParameterAnalysis() {
+            if (!analysisState.cacheKey) {
+                throw new Error('缺少数据缓存，请从指标分析页面进入。');
+            }
+            if (!analysisState.parameter) {
+                throw new Error('请选择需要分析的参数。');
+            }
+
+            const payload = {
+                cache_key: analysisState.cacheKey,
+                parameter: analysisState.parameter,
+                time_range: analysisState.timeRange,
+                horizon: analysisState.horizon,
+            };
+
+            const data = await fetchJson('/parameter-analysis', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            applyAnalysisResponse(data);
+        }
+
+        function populateExpertSchemeList(schemes) {
+            expertSchemeList.innerHTML = '';
+            if (!schemes.length) {
+                expertSchemeList.innerHTML = '<li>暂无知识方案</li>';
+                return;
+            }
+            schemes.forEach((scheme) => {
+                const li = document.createElement('li');
+                li.textContent = scheme.name;
+                li.dataset.schemeId = scheme.scheme_id;
+                if (scheme.scheme_id === analysisState.activeSchemeId) {
+                    li.classList.add('active');
+                }
+                li.addEventListener('click', () => {
+                    analysisState.activeSchemeId = scheme.scheme_id;
+                    renderExpertScheme(scheme);
+                    populateExpertSchemeList(schemes);
+                    fillExpertForm(scheme);
+                });
+                expertSchemeList.appendChild(li);
+            });
+        }
+
+        async function loadExpertSchemes() {
+            if (!analysisState.parameter) {
+                return;
+            }
+            try {
+                const query = new URLSearchParams({ target: analysisState.parameter });
+                if (analysisState.cacheKey) {
+                    query.set('cache_key', analysisState.cacheKey);
+                }
+                const data = await fetchJson(`/expert-schemes?${query.toString()}`);
+                analysisState.expertSchemes = Array.isArray(data.schemes) ? data.schemes : [];
+                populateExpertSchemeList(analysisState.expertSchemes);
+            } catch (err) {
+                expertSchemeList.innerHTML = `<li class="error">加载失败：${err.message}</li>`;
+            }
+        }
+
+        function openExpertModal() {
+            expertModal.classList.remove('hidden');
+            populateExpertSchemeList(analysisState.expertSchemes);
+            if (analysisState.availableParameters.length) {
+                expertTargetSelect.innerHTML = analysisState.availableParameters
+                    .map((param) => `<option value="${param}">${param}</option>`)
+                    .join('');
+                expertTargetSelect.value = analysisState.parameter;
+            }
+            expertControlledSelect.innerHTML = (analysisState.availableParameters || [])
+                .map((param) => `<option value="${param}">${param}</option>`)
+                .join('');
+            if (analysisState.activeSchemeId) {
+                const scheme = analysisState.expertSchemes.find((item) => item.scheme_id === analysisState.activeSchemeId);
+                if (scheme) {
+                    fillExpertForm(scheme);
+                }
+            } else {
+                resetExpertForm();
+            }
+            expertFormContainer.scrollTop = 0;
+            const hint = document.getElementById('expert-scroll-hint');
+            if (hint) {
+                hint.classList.remove('hidden');
+            }
+        }
+
+        function closeExpertModal() {
+            expertModal.classList.add('hidden');
+        }
+
+        function resetExpertForm() {
+            expertForm.reset();
+            expertWeightsTextarea.value = '';
+            expertNotesTextarea.value = '';
+            deleteExpertBtn.disabled = true;
+            expertFormContainer.scrollTop = 0;
+        }
+
+        function fillExpertForm(scheme) {
+            expertNameInput.value = scheme.name;
+            expertTargetSelect.value = scheme.target_parameter;
+            Array.from(expertControlledSelect.options).forEach((option) => {
+                option.selected = scheme.controlled_parameters.includes(option.value);
+            });
+            expertWeightsTextarea.value = scheme.factors
+                .map((item) => `${item.parameter}:${item.weight ?? ''}`)
+                .join('\n');
+            expertNotesTextarea.value = scheme.description || '';
+            deleteExpertBtn.disabled = false;
+            expertFormContainer.scrollTop = 0;
+        }
+
+        function parseFactorLines(rawText) {
+            return (rawText || '')
+                .split(/\n+/)
+                .map((line) => line.trim())
+                .filter(Boolean)
+                .map((line) => {
+                    const [parameter, weight, note] = line.split(':');
+                    const cleaned = {
+                        parameter: parameter?.trim(),
+                        weight: weight !== undefined ? Number(weight) : null,
+                        note: note ? note.trim() : undefined,
+                    };
+                    if (Number.isNaN(cleaned.weight)) {
+                        cleaned.weight = null;
+                    }
+                    return cleaned;
+                })
+                .filter((item) => item.parameter);
+        }
+
+        async function saveExpertScheme(event) {
+            event.preventDefault();
+            const formData = new FormData(expertForm);
+            const payload = {
+                name: formData.get('name') || expertNameInput.value,
+                target_parameter: expertTargetSelect.value,
+                description: expertNotesTextarea.value,
+                controlled_parameters: Array.from(expertControlledSelect.selectedOptions).map((opt) => opt.value),
+                factors: parseFactorLines(expertWeightsTextarea.value),
+            };
+
+            const schemeId = analysisState.activeSchemeId;
+            const method = schemeId ? 'PUT' : 'POST';
+            const url = schemeId ? `/expert-schemes/${schemeId}` : '/expert-schemes';
+            const body = {
+                ...payload,
+                cache_key: analysisState.cacheKey,
+            };
+
+            await fetchJson(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+
+            await loadExpertSchemes();
+            const current = analysisState.expertSchemes.find((item) => item.scheme_id === (analysisState.activeSchemeId || schemeId));
+            if (current) {
+                renderExpertScheme(current);
+                fillExpertForm(current);
+            }
+        }
+
+        async function deleteExpertScheme() {
+            if (!analysisState.activeSchemeId) {
+                return;
+            }
+            await fetchJson(`/expert-schemes/${analysisState.activeSchemeId}`, {
+                method: 'DELETE',
+            });
+            analysisState.activeSchemeId = null;
+            resetExpertForm();
+            await loadExpertSchemes();
+            renderExpertScheme(null);
+        }
+
+        function exportRecommendation() {
+            const payload = {
+                cache_key: analysisState.cacheKey,
+                parameter: analysisState.parameter,
+                time_range: analysisState.timeRange,
+                horizon: analysisState.horizon,
+            };
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${analysisState.parameter}-analysis.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        function markVerified() {
+            alert('已标记关注，请在后续版本接入工单系统。');
+        }
+
+        function enableModelPanel(enable) {
+            if (!modelPanel || !modelPanelEmpty || !modelPredictForm || !modelTrainLog || !modelPredictResult) return;
+            if (enable) {
+                modelPanel.classList.remove('hidden');
+                modelPanelEmpty.classList.add('hidden');
+                populateModelSelectors();
+            } else {
+                modelPanel.classList.add('hidden');
+                modelPanelEmpty.classList.remove('hidden');
+                modelPredictForm.classList.add('hidden');
+                modelTrainLog.textContent = '尚未训练模型。';
+                modelPredictResult.textContent = '等待模型训练完成后进行预测。';
+                currentModelId = '';
+            }
+        }
+
+        enableModelPanel(false);
+
+        parameterSelect.addEventListener('change', () => {
+            analysisState.parameter = parameterSelect.value;
+            fetchParameterAnalysis().catch((err) => {
+                alert(`分析失败：${err.message}`);
+            });
+            loadExpertSchemes().catch(() => {});
+        });
+
+        timeRangeSelect.addEventListener('change', () => {
+            analysisState.timeRange = timeRangeSelect.value;
+        });
+
+        refreshButton.addEventListener('click', () => {
+            setLoadingState();
+            fetchParameterAnalysis().catch((err) => {
+                alert(`分析失败：${err.message}`);
+            });
+            loadExpertSchemes().catch(() => {});
+        });
+
+        document.getElementById('open-expert-library').addEventListener('click', openExpertModal);
+        document.getElementById('close-expert-modal').addEventListener('click', closeExpertModal);
+        expertBackdrop.addEventListener('click', closeExpertModal);
+        expertForm.addEventListener('submit', saveExpertScheme);
+        deleteExpertBtn.addEventListener('click', deleteExpertScheme);
+        createExpertBtn.addEventListener('click', () => {
+            analysisState.activeSchemeId = null;
+            resetExpertForm();
+        });
+        exportBtn.addEventListener('click', exportRecommendation);
+        markBtn.addEventListener('click', markVerified);
+
+        expertFormContainer.addEventListener('scroll', () => {
+            const hint = document.getElementById('expert-scroll-hint');
+            if (!hint) return;
+            if (expertFormContainer.scrollTop > 30) {
+                hint.classList.add('hidden');
+            } else {
+                hint.classList.remove('hidden');
+            }
+        });
+
+        initialiseStateFromQuery();
+        setLoadingState();
+
+        fetchParameterAnalysis()
+            .then(() => loadExpertSchemes())
+            .catch((err) => {
+                document.getElementById('metric-status').textContent = '加载失败';
+                document.getElementById('metric-trend').textContent = err.message;
+            });
+    </script>
+</body>
+</html>
+
